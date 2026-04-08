@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  WAITER
+  KASIR
+  OWNER
+  DAPUR
+}
+
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+}
+
+enum OrderStatus {
+  OPEN
+  PAID
+  CANCELLED
+}
+
+enum PaymentMethod {
+  CASH
+  QRIS
+}
+
+enum StockChangeType {
+  SOLD
+  RESTOCK
+  DAILY_RESET
+}
+
+model User {
+  id        String    @id @default(cuid())
+  name      String
+  username  String    @unique
+  pin       String
+  role      Role
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  orders    Order[]
+  expenses  Expense[]
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String     @unique
+  sortOrder Int        @default(0)
+  menuItems MenuItem[]
+}
+
+model MenuItem {
+  id                   String               @id @default(cuid())
+  name                 String
+  categoryId           String
+  category             Category             @relation(fields: [categoryId], references: [id])
+  price                Int
+  initialStock         Int
+  currentStock         Int
+  minThreshold         Float                @default(0.25)
+  imageUrl             String?
+  isActive             Boolean              @default(true)
+  createdAt            DateTime             @default(now())
+  orderItems           OrderItem[]
+  stockLogs            StockLog[]
+  restockNotifications RestockNotification[]
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  orderNumber String      @unique
+  type        OrderType
+  status      OrderStatus @default(OPEN)
+  tableNumber Int?
+  createdById String
+  createdBy   User        @relation(fields: [createdById], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  items       OrderItem[]
+  transaction Transaction?
+}
+
+model OrderItem {
+  id           String   @id @default(cuid())
+  orderId      String
+  order        Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId   String
+  menuItem     MenuItem @relation(fields: [menuItemId], references: [id])
+  quantity     Int
+  priceAtOrder Int
+  createdAt    DateTime @default(now())
+}
+
+model Transaction {
+  id            String        @id @default(cuid())
+  orderId       String        @unique
+  order         Order         @relation(fields: [orderId], references: [id])
+  totalAmount   Int
+  paymentMethod PaymentMethod
+  cashReceived  Int?
+  changeAmount  Int?
+  paidAt        DateTime      @default(now())
+}
+
+model Expense {
+  id           String   @id @default(cuid())
+  date         DateTime
+  description  String
+  amount       Int
+  recordedById String
+  recordedBy   User     @relation(fields: [recordedById], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+model StockLog {
+  id         String          @id @default(cuid())
+  menuItemId String
+  menuItem   MenuItem        @relation(fields: [menuItemId], references: [id])
+  changeType StockChangeType
+  quantity   Int
+  note       String?
+  createdAt  DateTime        @default(now())
+}
+
+model RestockNotification {
+  id         String    @id @default(cuid())
+  menuItemId String
+  menuItem   MenuItem  @relation(fields: [menuItemId], references: [id])
+  isResolved Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+}
