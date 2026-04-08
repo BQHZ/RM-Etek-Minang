@@ -8,6 +8,8 @@ import {
   ClipboardList,
   Package,
   Receipt,
+  BarChart3,
+  Wallet,
 } from "lucide-react"
 
 const POS_NAV: SidebarItem[] = [
@@ -15,6 +17,7 @@ const POS_NAV: SidebarItem[] = [
   { label: "Pesanan", href: "/pos/orders", icon: ClipboardList },
   { label: "Stok Menu", href: "/pos/stock", icon: Package },
   { label: "Transaksi", href: "/pos/transactions", icon: Receipt },
+  { label: "Pengeluaran", href: "/pos/expenses", icon: Wallet },
 ]
 
 function PosShell({ children }: { children: React.ReactNode }) {

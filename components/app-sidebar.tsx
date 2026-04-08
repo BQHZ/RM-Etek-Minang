@@ -18,7 +18,10 @@ export default function AppSidebar({ items }: { items: SidebarItem[] }) {
     <aside className="w-56 border-r bg-white shrink-0 hidden md:flex flex-col">
       <nav className="flex-1 p-3 space-y-1">
         {items.map((item) => {
-          const active = pathname === item.href || pathname.startsWith(item.href + "/")
+          const isRoot = item.href === "/pos" || item.href === "/dashboard"
+          const active = isRoot
+            ? pathname === item.href
+            : pathname === item.href || pathname.startsWith(item.href + "/")
           return (
             <Link
               key={item.href}
