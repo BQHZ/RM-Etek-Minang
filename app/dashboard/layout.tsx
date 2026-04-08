@@ -10,10 +10,12 @@ import {
   Wallet,
   Package,
   List,
+  Receipt,
 } from "lucide-react"
 
 const DASHBOARD_NAV: SidebarItem[] = [
   { label: "Ringkasan", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Transaksi", href: "/dashboard/transactions", icon: Receipt },
   { label: "Laporan", href: "/dashboard/reports", icon: BarChart3 },
   { label: "Pengeluaran", href: "/dashboard/expenses", icon: Wallet },
   { label: "Kategori", href: "/dashboard/categories", icon: List },

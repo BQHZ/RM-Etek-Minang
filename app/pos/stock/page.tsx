@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -10,7 +11,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog"
 import { RotateCcw, RefreshCw } from "lucide-react"
-import { formatRupiah, cn } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 
 type Category = { id: string; name: string }
 type StockItem = {
@@ -51,9 +52,13 @@ export default function StockPage() {
   const [categories, setCategories] = useState<Category[]>([])
   const [filterCat, setFilterCat] = useState("all")
   const [loading, setLoading] = useState(true)
-  const [resetDialogOpen, setResetDialogOpen] = useState(false)
-  const [resetting, setResetting] = useState(false)
   const [lastRefresh, setLastRefresh] = useState(new Date())
+
+  // Reset dialog state
+  const [resetDialogOpen, setResetDialogOpen] = useState(false)
+  const [resetStocks, setResetStocks] = useState<Record<string, string>>({})
+  const [resetFilterCat, setResetFilterCat] = useState("all")
+  const [resetting, setResetting] = useState(false)
 
   const fetchData = useCallback(async () => {
     const [stockRes, catRes] = await Promise.all([
@@ -87,9 +92,30 @@ export default function StockPage() {
     return pct > 0 && pct <= 25
   }).length
 
-  const handleReset = async () => {
+  // --- Reset dialog logic ---
+  const openResetDialog = () => {
+    // Pre-fill with initialStock as suggestion
+    const stocks: Record<string, string> = {}
+    items.forEach((item) => {
+      stocks[item.id] = item.initialStock.toString()
+    })
+    setResetStocks(stocks)
+    setResetFilterCat("all")
+    setResetDialogOpen(true)
+  }
+
+  const handleResetStock = async () => {
     setResetting(true)
-    const res = await fetch("/api/stock/reset", { method: "POST" })
+    const payload = items.map((item) => ({
+      menuItemId: item.id,
+      stock: parseInt(resetStocks[item.id] || "0") || 0,
+    }))
+
+    const res = await fetch("/api/stock/reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items: payload }),
+    })
     const data = await res.json()
     if (data.success) {
       setResetDialogOpen(false)
@@ -100,6 +126,24 @@ export default function StockPage() {
     setResetting(false)
   }
 
+  const setAllStocksToDefault = () => {
+    const stocks: Record<string, string> = {}
+    items.forEach((item) => { stocks[item.id] = item.initialStock.toString() })
+    setResetStocks(stocks)
+  }
+
+  const setAllStocksZero = () => {
+    const stocks: Record<string, string> = {}
+    items.forEach((item) => { stocks[item.id] = "0" })
+    setResetStocks(stocks)
+  }
+
+  const resetFilteredItems = resetFilterCat === "all"
+    ? items
+    : items.filter((i) => i.categoryId === resetFilterCat)
+
+  const activeCount = Object.values(resetStocks).filter((v) => parseInt(v) > 0).length
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -107,8 +151,8 @@ export default function StockPage() {
         <div>
           <h1 className="text-2xl font-bold">Stok Etalase</h1>
           <p className="text-sm text-muted-foreground">
-            Terakhir diperbarui: {lastRefresh.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-            {" · "}Auto-refresh setiap 30 detik
+            Update: {lastRefresh.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+            {" · "}Auto-refresh 30 detik
           </p>
         </div>
         <div className="flex gap-2">
@@ -118,10 +162,10 @@ export default function StockPage() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => setResetDialogOpen(true)}
+            onClick={openResetDialog}
             className="text-orange-600 border-orange-200 hover:bg-orange-50"
           >
-            <RotateCcw className="h-4 w-4 mr-1" /> Reset Stok Harian
+            <RotateCcw className="h-4 w-4 mr-1" /> Atur Stok Harian
           </Button>
         </div>
       </div>
@@ -156,9 +200,7 @@ export default function StockPage() {
             ))}
           </SelectContent>
         </Select>
-        <span className="text-sm text-muted-foreground ml-2">
-          {filtered.length} menu
-        </span>
+        <span className="text-sm text-muted-foreground ml-2">{filtered.length} menu</span>
       </div>
 
       {/* Stock Grid */}
@@ -168,61 +210,40 @@ export default function StockPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
           {filtered.map((item) => {
             const pct = item.initialStock > 0
-              ? Math.round((item.currentStock / item.initialStock) * 100)
-              : 0
+              ? Math.round((item.currentStock / item.initialStock) * 100) : 0
             const color = getStockColor(item.currentStock, item.initialStock)
             const isOut = item.currentStock === 0
 
             return (
               <div
                 key={item.id}
-                className={cn(
-                  "rounded-xl border p-4 transition-all",
-                  getBgClass(color),
-                  isOut && "opacity-60"
-                )}
+                className={cn("rounded-xl border p-4 transition-all", getBgClass(color), isOut && "opacity-60")}
               >
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="min-w-0">
-                    <p className="font-semibold text-sm leading-tight truncate">
-                      {item.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {item.category.name}
-                    </p>
+                    <p className="font-semibold text-sm leading-tight truncate">{item.name}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{item.category.name}</p>
                   </div>
                   {isOut && (
-                    <Badge variant="destructive" className="text-[10px] shrink-0">
-                      HABIS
-                    </Badge>
+                    <Badge variant="destructive" className="text-[10px] shrink-0">HABIS</Badge>
                   )}
                 </div>
-
-                {/* Progress Bar */}
                 <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden mt-3">
                   <div
                     className={cn("h-full rounded-full transition-all duration-500", getBarClass(color))}
                     style={{ width: `${Math.min(pct, 100)}%` }}
                   />
                 </div>
-
-                {/* Label */}
                 <div className="flex items-center justify-between mt-2">
-                  <span className={cn(
-                    "text-xs font-bold",
-                    color === "red" ? "text-red-700" :
-                    color === "yellow" ? "text-yellow-700" :
-                    color === "green" ? "text-green-700" :
-                    "text-gray-500"
+                  <span className={cn("text-xs font-bold",
+                    color === "red" ? "text-red-700" : color === "yellow" ? "text-yellow-700" :
+                    color === "green" ? "text-green-700" : "text-gray-500"
                   )}>
                     {isOut ? "HABIS" : `${item.currentStock}/${item.initialStock} porsi`}
                   </span>
-                  <span className={cn(
-                    "text-xs font-semibold",
-                    color === "red" ? "text-red-600" :
-                    color === "yellow" ? "text-yellow-600" :
-                    color === "green" ? "text-green-600" :
-                    "text-gray-400"
+                  <span className={cn("text-xs font-semibold",
+                    color === "red" ? "text-red-600" : color === "yellow" ? "text-yellow-600" :
+                    color === "green" ? "text-green-600" : "text-gray-400"
                   )}>
                     {pct}%
                   </span>
@@ -233,47 +254,108 @@ export default function StockPage() {
         </div>
       )}
 
-      {/* Reset Confirmation Dialog */}
+      {/* ===== Manual Daily Stock Reset Dialog ===== */}
       <Dialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Reset Stok Harian</DialogTitle>
-          </DialogHeader>
-          <div className="py-4 space-y-3">
+        <DialogContent className="sm:max-w-2xl p-0 gap-0 max-h-[90vh] flex flex-col">
+          <DialogHeader className="p-5 pb-3 shrink-0">
+            <DialogTitle>Atur Stok Harian</DialogTitle>
             <p className="text-sm text-muted-foreground">
-              Tindakan ini akan:
+              Masukkan jumlah porsi untuk setiap menu hari ini. Menu dengan stok 0 tidak akan tampil di kasir.
             </p>
-            <ul className="text-sm space-y-2 ml-4">
-              <li className="flex items-start gap-2">
-                <span className="text-amber-600 mt-0.5">•</span>
-                Mereset semua stok menu ke jumlah stok awal
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-amber-600 mt-0.5">•</span>
-                Menyelesaikan semua notifikasi restock yang tertunda
-              </li>
-              <li className="flex items-start gap-2">
-                <span className="text-amber-600 mt-0.5">•</span>
-                Mencatat log reset harian
-              </li>
-            </ul>
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-              <p className="text-sm text-amber-800 font-medium">
-                Biasanya dilakukan di awal hari sebelum restoran buka.
-              </p>
+          </DialogHeader>
+
+          <div className="px-5 pb-3 flex items-center gap-2 flex-wrap shrink-0">
+            <Select value={resetFilterCat} onValueChange={setResetFilterCat}>
+              <SelectTrigger className="w-44 h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Kategori</SelectItem>
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="sm" onClick={setAllStocksToDefault}>
+              Isi Default
+            </Button>
+            <Button variant="outline" size="sm" onClick={setAllStocksZero} className="text-red-500">
+              Kosongkan Semua
+            </Button>
+          </div>
+
+          {/* Item List */}
+          <div className="flex-1 overflow-y-auto px-5 pb-3">
+            <div className="space-y-1.5">
+              {resetFilteredItems.map((item) => {
+                const stockVal = parseInt(resetStocks[item.id] || "0") || 0
+                const isZero = stockVal === 0
+                return (
+                  <div
+                    key={item.id}
+                    className={cn(
+                      "flex items-center gap-3 p-2.5 rounded-lg border",
+                      isZero ? "bg-gray-50 border-gray-200 opacity-60" : "bg-white border-gray-200"
+                    )}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{item.name}</p>
+                      <p className="text-xs text-muted-foreground">{item.category.name}</p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => {
+                          const cur = parseInt(resetStocks[item.id] || "0") || 0
+                          if (cur > 0) setResetStocks({ ...resetStocks, [item.id]: (cur - 1).toString() })
+                        }}
+                        className="h-8 w-8 rounded-lg border bg-white flex items-center justify-center hover:bg-gray-100 active:scale-95 text-lg font-bold"
+                      >
+                        −
+                      </button>
+                      <Input
+                        type="number"
+                        value={resetStocks[item.id] || "0"}
+                        onChange={(e) => setResetStocks({ ...resetStocks, [item.id]: e.target.value })}
+                        className="w-16 h-8 text-center text-sm font-bold"
+                        min={0}
+                      />
+                      <button
+                        onClick={() => {
+                          const cur = parseInt(resetStocks[item.id] || "0") || 0
+                          setResetStocks({ ...resetStocks, [item.id]: (cur + 1).toString() })
+                        }}
+                        className="h-8 w-8 rounded-lg border bg-white flex items-center justify-center hover:bg-gray-100 active:scale-95 text-lg font-bold"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    <span className="text-xs text-muted-foreground w-16 text-right shrink-0">
+                      {isZero ? "Libur" : `${stockVal} porsi`}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setResetDialogOpen(false)}>
-              Batal
-            </Button>
-            <Button
-              onClick={handleReset}
-              disabled={resetting}
-              className="bg-orange-600 hover:bg-orange-700"
-            >
-              {resetting ? "Mereset..." : "Ya, Reset Stok"}
-            </Button>
+
+          <DialogFooter className="p-5 pt-3 border-t shrink-0">
+            <div className="flex items-center justify-between w-full">
+              <span className="text-sm text-muted-foreground">
+                {activeCount}/{items.length} menu aktif hari ini
+              </span>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setResetDialogOpen(false)}>Batal</Button>
+                <Button
+                  onClick={handleResetStock}
+                  disabled={resetting}
+                  className="bg-orange-600 hover:bg-orange-700"
+                >
+                  {resetting ? "Menyimpan..." : "Simpan Stok Harian"}
+                </Button>
+              </div>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

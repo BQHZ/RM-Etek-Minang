@@ -7,12 +7,14 @@ import {
   ShoppingCart,
   ClipboardList,
   Package,
+  Receipt,
 } from "lucide-react"
 
 const POS_NAV: SidebarItem[] = [
   { label: "Kasir", href: "/pos", icon: ShoppingCart },
   { label: "Pesanan", href: "/pos/orders", icon: ClipboardList },
   { label: "Stok Menu", href: "/pos/stock", icon: Package },
+  { label: "Transaksi", href: "/pos/transactions", icon: Receipt },
 ]
 
 function PosShell({ children }: { children: React.ReactNode }) {

@@ -1,6 +1,55 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 
+export async function GET(request: NextRequest) {
+  try {
+    const dateParam = request.nextUrl.searchParams.get("date")
+    const method = request.nextUrl.searchParams.get("method")
+    const type = request.nextUrl.searchParams.get("type")
+
+    const where: any = {}
+    const orderWhere: any = {}
+
+    if (dateParam) {
+      const date = new Date(dateParam)
+      const start = new Date(date); start.setHours(0, 0, 0, 0)
+      const end = new Date(date); end.setHours(23, 59, 59, 999)
+      where.paidAt = { gte: start, lte: end }
+    }
+
+    if (method && method !== "all") {
+      where.paymentMethod = method
+    }
+
+    if (type && type !== "all") {
+      orderWhere.type = type
+    }
+
+    const transactions = await prisma.transaction.findMany({
+      where: {
+        ...where,
+        order: Object.keys(orderWhere).length > 0 ? orderWhere : undefined,
+      },
+      include: {
+        order: {
+          include: {
+            items: { include: { menuItem: true } },
+            createdBy: { select: { id: true, name: true } },
+          },
+        },
+      },
+      orderBy: { paidAt: "desc" },
+    })
+
+    return NextResponse.json({ success: true, data: transactions })
+  } catch {
+    return NextResponse.json(
+      { success: false, error: "Gagal memuat transaksi" },
+      { status: 500 }
+    )
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { orderId, paymentMethod, cashReceived } = await request.json()
