@@ -6,11 +6,11 @@ import AppSidebar, { SidebarItem } from "@/components/app-sidebar"
 import {
   LayoutDashboard,
   BarChart3,
-  Users,
   Wallet,
   Package,
   List,
   Receipt,
+  Settings,
 } from "lucide-react"
 
 const DASHBOARD_NAV: SidebarItem[] = [
@@ -20,7 +20,7 @@ const DASHBOARD_NAV: SidebarItem[] = [
   { label: "Pengeluaran", href: "/dashboard/expenses", icon: Wallet },
   { label: "Kategori", href: "/dashboard/categories", icon: List },
   { label: "Stok & Menu", href: "/dashboard/menu", icon: Package },
-  { label: "Pengguna", href: "/dashboard/users", icon: Users },
+  { label: "Pengaturan", href: "/dashboard/settings", icon: Settings },
 ]
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
