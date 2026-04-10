@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
           type: tx.order.type === "DINE_IN" ? "Dine-In" : "Takeaway",
           method: tx.paymentMethod === "CASH" ? "Tunai" : "QRIS",
           total: tx.totalAmount,
-          cashier: tx.order.createdBy.name,
+          cashier: tx.order.createdBy?.name || "Pelanggan",
           time: new Date(tx.paidAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
           items: tx.order.items.map((i) => `${i.menuItem.name} x${i.quantity}`).join(", "),
         })),

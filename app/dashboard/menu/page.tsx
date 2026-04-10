@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -13,18 +13,39 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { Plus, Pencil, Power, RotateCcw } from "lucide-react"
+import { Plus, Pencil, Power, RotateCcw, Camera } from "lucide-react"
 import { formatRupiah, cn } from "@/lib/utils"
 
 type Category = { id: string; name: string }
 type MenuItem = {
   id: string; name: string; categoryId: string; category: Category;
   price: number; initialStock: number; currentStock: number;
-  minThreshold: number; isActive: boolean
+  minThreshold: number; isActive: boolean; imageUrl: string | null
 }
 
 const emptyForm = {
   name: "", categoryId: "", price: "", initialStock: "", minThreshold: "25", isActive: true,
+}
+
+function resizeImage(file: File, maxW: number, maxH: number, quality: number): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement("canvas")
+        let w = img.width, h = img.height
+        if (w > maxW) { h = h * (maxW / w); w = maxW }
+        if (h > maxH) { w = w * (maxH / h); h = maxH }
+        canvas.width = w; canvas.height = h
+        const ctx = canvas.getContext("2d")!
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve(canvas.toDataURL("image/jpeg", quality))
+      }
+      img.src = e.target?.result as string
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
 export default function MenuPage() {
@@ -101,6 +122,42 @@ export default function MenuPage() {
   }
 
   const formatPriceInput = (value: string) => value.replace(/\D/g, "")
+
+  // Image upload
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [uploadingId, setUploadingId] = useState<string | null>(null)
+
+  const handleImageUpload = async (menuItemId: string, file: File) => {
+    if (!file.type.startsWith("image/")) { alert("File harus berupa gambar"); return }
+    setUploadingId(menuItemId)
+
+    // Resize image client-side
+    const resized = await resizeImage(file, 400, 400, 0.7)
+
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ menuItemId, imageData: resized }),
+    })
+    const data = await res.json()
+    if (data.success) {
+      fetchData()
+    } else {
+      alert(data.error)
+    }
+    setUploadingId(null)
+  }
+
+  const triggerUpload = (menuItemId: string) => {
+    setUploadingId(menuItemId)
+    fileInputRef.current?.click()
+  }
+
+  const onFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file && uploadingId) handleImageUpload(uploadingId, file)
+    e.target.value = ""
+  }
 
   // --- Reset stock logic ---
   const openResetDialog = () => {
@@ -179,6 +236,7 @@ export default function MenuPage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-16">Foto</TableHead>
               <TableHead>Nama Menu</TableHead>
               <TableHead>Kategori</TableHead>
               <TableHead className="text-right">Harga</TableHead>
@@ -186,19 +244,43 @@ export default function MenuPage() {
               <TableHead className="text-center">Stok Saat Ini</TableHead>
               <TableHead className="text-center">Threshold</TableHead>
               <TableHead className="text-center">Status</TableHead>
-              <TableHead className="w-24 text-right">Aksi</TableHead>
+              <TableHead className="w-28 text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Memuat...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Memuat...</TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Tidak ada menu</TableCell></TableRow>
+              <TableRow><TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Tidak ada menu</TableCell></TableRow>
             ) : (
               filtered.map((item) => {
                 const lowStock = item.currentStock <= item.initialStock * item.minThreshold
                 return (
                   <TableRow key={item.id} className={!item.isActive ? "opacity-50" : ""}>
+                    <TableCell>
+                      <button
+                        onClick={() => triggerUpload(item.id)}
+                        className="w-12 h-12 rounded-lg border-2 border-dashed border-gray-200 overflow-hidden hover:border-amber-400 transition-colors relative group"
+                        title="Upload foto"
+                      >
+                        {item.imageUrl ? (
+                          <>
+                            <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Camera className="h-4 w-4 text-white" />
+                            </div>
+                          </>
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-gray-50">
+                            {uploadingId === item.id ? (
+                              <span className="text-xs text-muted-foreground animate-pulse">...</span>
+                            ) : (
+                              <Camera className="h-4 w-4 text-gray-300" />
+                            )}
+                          </div>
+                        )}
+                      </button>
+                    </TableCell>
                     <TableCell className="font-medium">{item.name}</TableCell>
                     <TableCell>{item.category.name}</TableCell>
                     <TableCell className="text-right font-mono">{formatRupiah(item.price)}</TableCell>
@@ -350,6 +432,15 @@ export default function MenuPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Hidden file input for image upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={onFileSelected}
+      />
     </div>
   )
 }

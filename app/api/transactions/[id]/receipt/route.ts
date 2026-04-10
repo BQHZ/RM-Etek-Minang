@@ -40,7 +40,7 @@ export async function GET(
       }),
       type: transaction.order.type,
       tableNumber: transaction.order.tableNumber,
-      cashierName: transaction.order.createdBy.name,
+      cashierName: transaction.order.createdBy?.name || "Pelanggan",
       items: transaction.order.items.map((item) => ({
         name: item.menuItem.name,
         quantity: item.quantity,

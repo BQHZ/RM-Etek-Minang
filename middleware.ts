@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getSessionFromRequest, getRoleRedirect } from "@/lib/auth"
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/users"]
+const PUBLIC_PATHS = [
+  "/login",
+  "/api/auth/login",
+  "/api/users",
+  "/order",
+  "/api/menu/public",
+  "/api/orders/online",
+]
 
 const ROLE_ACCESS: Record<string, string[]> = {
   "/pos": ["WAITER", "KASIR"],
@@ -17,6 +24,7 @@ export async function middleware(request: NextRequest) {
     PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api/auth/logout") ||
+    pathname.match(/^\/api\/orders\/[^/]+\/status$/) ||
     pathname === "/favicon.ico"
   ) {
     return NextResponse.next()

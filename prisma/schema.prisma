@@ -21,6 +21,7 @@ enum OrderType {
 }
 
 enum OrderStatus {
+  PENDING_CONFIRMATION
   OPEN
   PAID
   CANCELLED
@@ -29,6 +30,11 @@ enum OrderStatus {
 enum PaymentMethod {
   CASH
   QRIS
+}
+
+enum OrderSource {
+  WAITER
+  ONLINE
 }
 
 enum StockChangeType {
@@ -74,15 +80,18 @@ model MenuItem {
 }
 
 model Order {
-  id          String      @id @default(cuid())
-  orderNumber String      @unique
-  type        OrderType
-  status      OrderStatus @default(OPEN)
-  tableNumber Int?
-  createdById String
-  createdBy   User        @relation(fields: [createdById], references: [id])
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id            String      @id @default(cuid())
+  orderNumber   String      @unique
+  type          OrderType
+  status        OrderStatus @default(OPEN)
+  source        OrderSource @default(WAITER)
+  tableNumber   Int?
+  customerNote  String?
+  rejectReason  String?
+  createdById   String?
+  createdBy     User?       @relation(fields: [createdById], references: [id])
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
   items       OrderItem[]
   transaction Transaction?
 }

@@ -3,3 +3,4 @@
 
 ALTER PUBLICATION supabase_realtime ADD TABLE "MenuItem";
 ALTER PUBLICATION supabase_realtime ADD TABLE "RestockNotification";
+ALTER PUBLICATION supabase_realtime ADD TABLE "Order";

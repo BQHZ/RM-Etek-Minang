@@ -18,6 +18,7 @@ import { formatRupiah } from "@/lib/utils"
 import ReceiptDialog from "@/components/receipt-dialog"
 import type { ReceiptData } from "@/components/receipt-template"
 
+
 type TransactionItem = {
   id: string
   orderId: string
@@ -103,7 +104,7 @@ export default function TransactionHistory({ canVoid = false }: { canVoid?: bool
       time: paid.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
       type: tx.order.type as "DINE_IN" | "TAKEAWAY",
       tableNumber: tx.order.tableNumber,
-      cashierName: tx.order.createdBy.name,
+      cashierName: tx.order.createdBy?.name || "Pelanggan",
       items: tx.order.items.map((i) => ({
         name: i.menuItem.name,
         quantity: i.quantity,
@@ -245,7 +246,7 @@ export default function TransactionHistory({ canVoid = false }: { canVoid?: bool
                   <TableCell className="text-right font-mono font-medium">
                     {formatRupiah(tx.totalAmount)}
                   </TableCell>
-                  <TableCell className="text-sm">{tx.order.createdBy.name}</TableCell>
+                  <TableCell className="text-sm">{tx.order.createdBy?.name || "Pelanggan"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="icon" onClick={() => setDetailItem(tx)} title="Detail">
@@ -315,7 +316,7 @@ export default function TransactionHistory({ canVoid = false }: { canVoid?: bool
                   )}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Kasir</span>
-                    <span>{detailItem.order.createdBy.name}</span>
+                    <span>{detailItem.order.createdBy?.name || "Pelanggan"}</span>
                   </div>
                 </div>
 

@@ -11,15 +11,19 @@ import {
   List,
   Receipt,
   Settings,
+  QrCode,
+  TrendingUp,
 } from "lucide-react"
 
 const DASHBOARD_NAV: SidebarItem[] = [
   { label: "Ringkasan", href: "/dashboard", icon: LayoutDashboard },
   { label: "Transaksi", href: "/dashboard/transactions", icon: Receipt },
   { label: "Laporan", href: "/dashboard/reports", icon: BarChart3 },
+  { label: "Analitik", href: "/dashboard/analytics", icon: TrendingUp },
   { label: "Pengeluaran", href: "/dashboard/expenses", icon: Wallet },
   { label: "Kategori", href: "/dashboard/categories", icon: List },
   { label: "Stok & Menu", href: "/dashboard/menu", icon: Package },
+  { label: "QR Code Meja", href: "/dashboard/qr-codes", icon: QrCode },
   { label: "Pengaturan", href: "/dashboard/settings", icon: Settings },
 ]
 
