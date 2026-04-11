@@ -5,373 +5,505 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import {
-  Table, TableHeader, TableBody, TableRow, TableHead, TableCell, TableFooter,
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table"
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select"
 import { formatRupiah, cn } from "@/lib/utils"
-import { fetchExportData, exportPDF, exportExcel } from "@/lib/export"
-import { Download, FileSpreadsheet, FileText } from "lucide-react"
-import Link from "next/link"
+import { Download, FileSpreadsheet, TrendingUp, TrendingDown, Calendar } from "lucide-react"
 import dynamic from "next/dynamic"
 
-const RechartsBar = dynamic(
-  () => import("recharts").then((mod) => {
-    const { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Cell } = mod
-    return function TopItemsChart({ data }: { data: any[] }) {
-      const colors = ["#b45309", "#d97706", "#f59e0b", "#fbbf24", "#fcd34d"]
-      return (
-        <ResponsiveContainer width="100%" height={250}>
-          <BarChart data={data} layout="vertical" margin={{ left: 10 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-            <XAxis type="number" tick={{ fontSize: 11 }}
-              tickFormatter={(v: number) => v >= 1000 ? `${v / 1000}rb` : v.toString()} />
-            <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={(value: number) => [`${value} porsi`, "Terjual"]} />
-            <Bar dataKey="quantity" radius={[0, 6, 6, 0]}>
-              {data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      )
-    }
-  }),
-  { ssr: false, loading: () => <div className="h-[250px] bg-gray-50 rounded-lg animate-pulse" /> }
-)
+const RevenueLine = dynamic(() => import("@/components/analytics-charts").then((m) => m.RevenueTrend), { ssr: false, loading: () => <div className="h-[250px] bg-gray-50 rounded-lg animate-pulse" /> })
+const TopItemsBar = dynamic(() => import("@/components/analytics-charts").then((m) => m.TopItemsBar), { ssr: false, loading: () => <div className="h-[250px] bg-gray-50 rounded-lg animate-pulse" /> })
+const MethodPie = dynamic(() => import("@/components/analytics-charts").then((m) => m.MethodPie), { ssr: false, loading: () => <div className="h-[250px] bg-gray-50 rounded-lg animate-pulse" /> })
 
-const RechartsPie = dynamic(
-  () => import("recharts").then((mod) => {
-    const { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } = mod
-    return function PaymentPieChart({ data }: { data: any[] }) {
-      const colors = ["#16a34a", "#2563eb"]
-      return (
-        <ResponsiveContainer width="100%" height={250}>
-          <PieChart>
-            <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90}
-              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
-              {data.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
-            </Pie>
-            <Tooltip formatter={(value: number) => formatRupiah(value)} />
-            <Legend />
-          </PieChart>
-        </ResponsiveContainer>
-      )
-    }
-  }),
-  { ssr: false, loading: () => <div className="h-[250px] bg-gray-50 rounded-lg animate-pulse" /> }
-)
+// Date helpers
+function todayStr() { return new Date().toISOString().split("T")[0] }
+function fmtRp(n: number) { return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n) }
 
-type DailyReport = {
-  date: string; totalRevenue: number; totalCount: number; avgPerTransaction: number;
-  cash: { count: number; revenue: number }; qris: { count: number; revenue: number };
-  dineIn: { count: number; revenue: number }; takeaway: { count: number; revenue: number };
-  stock: {
-    outOfStock: { name: string; currentStock: number; initialStock: number }[];
-    remaining: { name: string; currentStock: number; initialStock: number }[];
-  }
+function getWeekRange(date: Date) {
+  const d = new Date(date)
+  const day = d.getDay()
+  const mondayOff = day === 0 ? -6 : 1 - day
+  const mon = new Date(d); mon.setDate(d.getDate() + mondayOff)
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6)
+  return { start: mon.toISOString().split("T")[0], end: sun.toISOString().split("T")[0] }
 }
-type Profit = {
-  totalRevenue: number; totalExpenses: number; profit: number;
-  revenueCount: number; expenseCount: number; hasExpenses: boolean
-}
-type MenuSale = { name: string; category: string; quantity: number; price: number; total: number }
-type MenuSalesData = { items: MenuSale[]; grandTotal: number; totalPortions: number }
 
-function todayStr() {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+function getMonthRange(year: number, month: number) {
+  const start = new Date(year, month, 1)
+  const end = new Date(year, month + 1, 0)
+  return { start: start.toISOString().split("T")[0], end: end.toISOString().split("T")[0] }
 }
+
+function pctChange(cur: number, prev: number): number | null {
+  if (prev === 0) return null
+  return Math.round(((cur - prev) / prev) * 100)
+}
+
+const MONTHS = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+
+type PeriodType = "daily" | "weekly" | "monthly" | "custom"
 
 export default function ReportsPage() {
-  const [date, setDate] = useState(todayStr())
-  const [report, setReport] = useState<DailyReport | null>(null)
-  const [profit, setProfit] = useState<Profit | null>(null)
-  const [menuSales, setMenuSales] = useState<MenuSalesData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [period, setPeriod] = useState<PeriodType>("daily")
+  const [loading, setLoading] = useState(false)
+  const [data, setData] = useState<any>(null)
 
-  const fetchData = useCallback(async () => {
+  // Daily
+  const [dailyDate, setDailyDate] = useState(todayStr())
+  // Weekly
+  const [weekDate, setWeekDate] = useState(todayStr())
+  // Monthly
+  const [monthYear, setMonthYear] = useState(new Date().getFullYear())
+  const [monthMonth, setMonthMonth] = useState(new Date().getMonth())
+  // Custom
+  const [customStart, setCustomStart] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return d.toISOString().split("T")[0] })
+  const [customEnd, setCustomEnd] = useState(todayStr())
+
+  const getRange = useCallback(() => {
+    if (period === "daily") return { start: dailyDate, end: dailyDate }
+    if (period === "weekly") return getWeekRange(new Date(weekDate))
+    if (period === "monthly") return getMonthRange(monthYear, monthMonth)
+    return { start: customStart, end: customEnd }
+  }, [period, dailyDate, weekDate, monthYear, monthMonth, customStart, customEnd])
+
+  const fetchReport = useCallback(async () => {
     setLoading(true)
-    const [repRes, profRes, menuRes] = await Promise.all([
-      fetch(`/api/reports/daily?date=${date}`),
-      fetch(`/api/reports/profit?date=${date}`),
-      fetch(`/api/reports/menu-sales?date=${date}`),
-    ])
-    const [repData, profData, menuData] = await Promise.all([repRes.json(), profRes.json(), menuRes.json()])
-    if (repData.success) setReport(repData.data)
-    if (profData.success) setProfit(profData.data)
-    if (menuData.success) setMenuSales(menuData.data)
+    const { start, end } = getRange()
+    const res = await fetch(`/api/reports/range?startDate=${start}&endDate=${end}`)
+    const d = await res.json()
+    if (d.success) setData(d.data)
     setLoading(false)
-  }, [date])
+  }, [getRange])
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => { fetchReport() }, [fetchReport])
 
-  const handleDateChange = (val: string) => {
-    if (val > todayStr()) return
-    setDate(val)
+  const getPeriodLabel = () => {
+    if (period === "daily") return new Date(dailyDate).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+    if (period === "weekly") {
+      const { start, end } = getWeekRange(new Date(weekDate))
+      const s = new Date(start), e = new Date(end)
+      return `${s.getDate()}-${e.getDate()} ${s.toLocaleDateString("id-ID", { month: "long", year: "numeric" })}`
+    }
+    if (period === "monthly") return `${MONTHS[monthMonth]} ${monthYear}`
+    return `${new Date(customStart).toLocaleDateString("id-ID", { day: "numeric", month: "short" })} - ${new Date(customEnd).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}`
   }
 
-  const [exporting, setExporting] = useState(false)
-  const [showExportMenu, setShowExportMenu] = useState(false)
-
-  const handleExport = async (format: "pdf" | "excel") => {
-    setShowExportMenu(false)
-    setExporting(true)
-    try {
-      const data = await fetchExportData(date)
-      if (!data) { alert("Tidak ada data untuk diekspor"); return }
-      if (data.summary.transactionCount === 0 && data.expenses.length === 0) {
-        alert("Tidak ada data untuk tanggal ini"); return
-      }
-      if (format === "pdf") exportPDF(data)
-      else exportExcel(data)
-    } catch { alert("Gagal mengekspor laporan") }
-    setExporting(false)
+  const getFilename = () => {
+    if (period === "daily") return `Laporan_Harian_${dailyDate.replace(/-/g, "")}`
+    if (period === "weekly") { const { start } = getWeekRange(new Date(weekDate)); return `Laporan_Mingguan_${start.replace(/-/g, "")}` }
+    if (period === "monthly") return `Laporan_Bulanan_${monthYear}_${(monthMonth + 1).toString().padStart(2, "0")}`
+    return `Laporan_${customStart.replace(/-/g, "")}_to_${customEnd.replace(/-/g, "")}`
   }
 
-  const dateLabel = new Date(date + "T00:00:00").toLocaleDateString("id-ID", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric",
-  })
+  const handleExportPDF = () => {
+    if (!data) return
+    const s = data.summary
+    const filename = getFilename()
+    const periodLabel = getPeriodLabel()
+    const periodTitle = period === "daily" ? "HARIAN" : period === "weekly" ? "MINGGUAN" : period === "monthly" ? "BULANAN" : "CUSTOM"
+
+    const html = `<!DOCTYPE html>
+<html><head><title>${filename}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; font-size: 11px; padding: 15mm; color: #333; }
+  h1 { font-size: 16px; text-align: center; margin-bottom: 2px; }
+  h2 { font-size: 13px; text-align: center; margin-bottom: 4px; color: #666; }
+  .date { text-align: center; margin-bottom: 15px; color: #888; }
+  .section { margin-top: 18px; margin-bottom: 8px; font-size: 13px; font-weight: bold; border-bottom: 2px solid #b45309; padding-bottom: 3px; color: #92400e; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  th { background: #92400e; color: white; padding: 5px 6px; text-align: left; font-size: 9px; }
+  td { padding: 4px 6px; border-bottom: 1px solid #e5e7eb; font-size: 9px; }
+  tr:nth-child(even) { background: #fef9ee; }
+  .right { text-align: right; } .center { text-align: center; } .bold { font-weight: bold; }
+  .total-row { background: #f5f5f5 !important; font-weight: bold; }
+  .best { background: #dcfce7 !important; } .worst { background: #fee2e2 !important; }
+  .footer { margin-top: 20px; text-align: center; font-size: 8px; color: #999; border-top: 1px solid #ddd; padding-top: 8px; }
+  @media print { body { padding: 10mm; } @page { size: A4; margin: 10mm; } }
+</style>
+</head><body>
+<h1>LAPORAN ${periodTitle}</h1>
+<h2>RM. ETEK MINANG</h2>
+<div class="date">${periodLabel}</div>
+
+<div class="section">RINGKASAN</div>
+<table>
+  <tr><td>Total Pendapatan</td><td class="right bold">${fmtRp(s.totalRevenue)}</td></tr>
+  <tr><td>Total Pengeluaran</td><td class="right bold">${s.hasExpenses ? fmtRp(s.totalExpenses) : fmtRp(0) + ' (belum dicatat)'}</td></tr>
+  <tr><td>Profit</td><td class="right bold">${fmtRp(s.profit)}</td></tr>
+  <tr><td>Jumlah Transaksi</td><td class="right bold">${s.totalCount}</td></tr>
+  <tr><td>Rata-rata / Hari</td><td class="right">${fmtRp(s.avgDailyRevenue)}</td></tr>
+  ${s.bestDay ? `<tr><td>Hari Terbaik</td><td class="right">${s.bestDay.dateFormatted} — ${fmtRp(s.bestDay.revenue)}</td></tr>` : ""}
+  ${s.worstDay ? `<tr><td>Hari Terburuk</td><td class="right">${s.worstDay.dateFormatted} — ${fmtRp(s.worstDay.revenue)}</td></tr>` : ""}
+  <tr><td>Tunai</td><td class="right">${s.cash.count} trx — ${fmtRp(s.cash.revenue)}</td></tr>
+  <tr><td>QRIS</td><td class="right">${s.qris.count} trx — ${fmtRp(s.qris.revenue)}</td></tr>
+</table>
+
+${data.daily.length > 1 ? `
+<div class="section">BREAKDOWN HARIAN</div>
+<table>
+  <tr><th>Tanggal</th><th class="right">Pendapatan</th><th class="right">Pengeluaran</th><th class="right">Profit</th><th class="center">Trx</th></tr>
+  ${data.daily.map((d: any) => `<tr class="${s.bestDay && d.date === s.bestDay.date ? 'best' : s.worstDay && d.date === s.worstDay.date ? 'worst' : ''}"><td>${d.date}</td><td class="right">${fmtRp(d.revenue)}</td><td class="right">${fmtRp(d.expenses)}</td><td class="right">${fmtRp(d.profit)}</td><td class="center">${d.count}</td></tr>`).join("")}
+  <tr class="total-row"><td>TOTAL</td><td class="right">${fmtRp(s.totalRevenue)}</td><td class="right">${fmtRp(s.totalExpenses)}</td><td class="right">${fmtRp(s.profit)}</td><td class="center">${s.totalCount}</td></tr>
+</table>` : ""}
+
+${data.menuSales.length > 0 ? `
+<div class="section">PENJUALAN MENU</div>
+<table>
+  <tr><th class="center">No</th><th>Menu</th><th>Kategori</th><th class="center">Porsi</th><th class="right">Pendapatan</th></tr>
+  ${data.menuSales.map((m: any, i: number) => `<tr><td class="center">${i + 1}</td><td>${m.name}</td><td>${m.category}</td><td class="center">${m.qty}</td><td class="right">${fmtRp(m.revenue)}</td></tr>`).join("")}
+</table>` : ""}
+
+${data.expenseList.length > 0 ? `
+<div class="section">PENGELUARAN</div>
+<table>
+  <tr><th>Tanggal</th><th>Deskripsi</th><th class="right">Jumlah</th><th>Dicatat</th></tr>
+  ${data.expenseList.map((e: any) => `<tr><td>${e.date}</td><td>${e.description}</td><td class="right">${fmtRp(e.amount)}</td><td>${e.recordedBy}</td></tr>`).join("")}
+  <tr class="total-row"><td>TOTAL</td><td></td><td class="right">${fmtRp(s.totalExpenses)}</td><td></td></tr>
+</table>` : ""}
+
+<div class="footer">Generated by POS System RM. Etek Minang — ${new Date().toLocaleString("id-ID")}</div>
+</body></html>`
+
+    const win = window.open("", "_blank", "width=800,height=600")
+    if (!win) { alert("Pop-up diblokir browser."); return }
+    win.document.write(html)
+    win.document.close()
+    win.onload = () => { win.print() }
+  }
+
+  const handleExportExcel = async () => {
+    if (!data) return
+    const XLSX = await import("xlsx")
+    const wb = XLSX.utils.book_new()
+    const s = data.summary
+    const fn = getFilename()
+
+    // Sheet 1: Summary
+    const sum = [
+      [`LAPORAN - RM. ETEK MINANG`], [getPeriodLabel()], [],
+      ["Keterangan", "Nilai"],
+      ["Total Pendapatan", s.totalRevenue], ["Total Pengeluaran", s.totalExpenses],
+      ["Profit", s.profit], ["Jumlah Transaksi", s.totalCount],
+      ["Rata-rata / Hari", s.avgDailyRevenue],
+      ...(s.bestDay ? [["Hari Terbaik", `${s.bestDay.date} (${s.bestDay.revenue})`]] : []),
+      ...(s.worstDay ? [["Hari Terburuk", `${s.worstDay.date} (${s.worstDay.revenue})`]] : []),
+      [], ["Metode", "Transaksi", "Pendapatan"],
+      ["Tunai", s.cash.count, s.cash.revenue], ["QRIS", s.qris.count, s.qris.revenue],
+      [], ["Tipe", "Transaksi", "Pendapatan"],
+      ["Dine-In", s.dineIn.count, s.dineIn.revenue], ["Takeaway", s.takeaway.count, s.takeaway.revenue],
+    ]
+    const ws1 = XLSX.utils.aoa_to_sheet(sum)
+    ws1["!cols"] = [{ wch: 25 }, { wch: 20 }, { wch: 18 }]
+    XLSX.utils.book_append_sheet(wb, ws1, "Ringkasan")
+
+    // Sheet 2: Daily breakdown
+    if (data.daily.length > 0) {
+      const dailyRows = data.daily.map((d: any) => [d.date, d.revenue, d.expenses, d.profit, d.count])
+      dailyRows.push(["TOTAL", s.totalRevenue, s.totalExpenses, s.profit, s.totalCount])
+      const ws2 = XLSX.utils.aoa_to_sheet([["Tanggal", "Pendapatan", "Pengeluaran", "Profit", "Transaksi"], ...dailyRows])
+      ws2["!cols"] = [{ wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 10 }]
+      XLSX.utils.book_append_sheet(wb, ws2, "Harian")
+    }
+
+    // Sheet 3: Menu sales
+    if (data.menuSales.length > 0) {
+      const menuRows = data.menuSales.map((m: any, i: number) => [i + 1, m.name, m.category, m.qty, m.revenue])
+      const ws3 = XLSX.utils.aoa_to_sheet([["No", "Menu", "Kategori", "Porsi", "Pendapatan"], ...menuRows])
+      ws3["!cols"] = [{ wch: 5 }, { wch: 25 }, { wch: 15 }, { wch: 10 }, { wch: 18 }]
+      XLSX.utils.book_append_sheet(wb, ws3, "Penjualan Menu")
+    }
+
+    // Sheet 4: Expenses
+    if (data.expenseList.length > 0) {
+      const expRows = data.expenseList.map((e: any) => [e.date, e.description, e.amount, e.recordedBy])
+      expRows.push(["TOTAL", "", s.totalExpenses, ""])
+      const ws4 = XLSX.utils.aoa_to_sheet([["Tanggal", "Deskripsi", "Jumlah", "Dicatat Oleh"], ...expRows])
+      ws4["!cols"] = [{ wch: 14 }, { wch: 35 }, { wch: 18 }, { wch: 18 }]
+      XLSX.utils.book_append_sheet(wb, ws4, "Pengeluaran")
+    }
+
+    // Sheet 5: Transactions
+    if (data.transactionList.length > 0) {
+      const txRows = data.transactionList.map((t: any) => [t.orderNumber, t.date, t.time, t.type, t.method, t.total, t.cashier, t.items])
+      const ws5 = XLSX.utils.aoa_to_sheet([["No. Pesanan", "Tanggal", "Waktu", "Tipe", "Metode", "Total", "Kasir", "Item"], ...txRows])
+      ws5["!cols"] = [{ wch: 22 }, { wch: 12 }, { wch: 8 }, { wch: 10 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 50 }]
+      XLSX.utils.book_append_sheet(wb, ws5, "Transaksi")
+    }
+
+    XLSX.writeFile(wb, `${fn}.xlsx`)
+  }
+
+  function PctBadge({ cur, prev, label }: { cur: number; prev: number; label?: string }) {
+    const pct = pctChange(cur, prev)
+    if (pct === null) return null
+    return (
+      <span className={cn("flex items-center gap-0.5 text-xs font-medium", pct >= 0 ? "text-green-600" : "text-red-600")}>
+        {pct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+        {pct >= 0 ? "+" : ""}{pct}%{label ? ` ${label}` : ""}
+      </span>
+    )
+  }
+
+  const s = data?.summary
+  const prev = data?.previous
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Laporan Harian</h1>
-          <p className="text-sm text-muted-foreground">{dateLabel}</p>
+          <h1 className="text-2xl font-bold">Laporan</h1>
+          <p className="text-sm text-muted-foreground">{getPeriodLabel()}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Input type="date" value={date} max={todayStr()}
-            onChange={(e) => handleDateChange(e.target.value)} className="w-44" />
-          <div className="relative">
-            <Button
-              variant="outline"
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              disabled={exporting || loading}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              {exporting ? "Mengekspor..." : "Export"}
+        {data && (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={handleExportPDF}>
+              <Download className="h-4 w-4 mr-2" /> PDF
             </Button>
-            {showExportMenu && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowExportMenu(false)} />
-                <div className="absolute right-0 top-full mt-1 z-50 bg-white border rounded-lg shadow-lg py-1 w-48">
-                  <button
-                    onClick={() => handleExport("pdf")}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm hover:bg-gray-50 text-left"
-                  >
-                    <FileText className="h-4 w-4 text-red-600" />
-                    Export PDF
-                  </button>
-                  <button
-                    onClick={() => handleExport("excel")}
-                    className="flex items-center gap-2 w-full px-4 py-2.5 text-sm hover:bg-gray-50 text-left"
-                  >
-                    <FileSpreadsheet className="h-4 w-4 text-green-600" />
-                    Export Excel
-                  </button>
-                </div>
-              </>
-            )}
+            <Button variant="outline" size="sm" onClick={handleExportExcel}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" /> Excel
+            </Button>
           </div>
+        )}
+      </div>
+
+      {/* Period Tabs */}
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex bg-gray-100 rounded-lg p-1 gap-0.5">
+          {([
+            { key: "daily", label: "Harian" },
+            { key: "weekly", label: "Mingguan" },
+            { key: "monthly", label: "Bulanan" },
+            { key: "custom", label: "Custom" },
+          ] as { key: PeriodType; label: string }[]).map((t) => (
+            <button key={t.key} onClick={() => setPeriod(t.key)}
+              className={cn("px-3 py-1.5 rounded-md text-sm font-medium transition-all",
+                period === t.key ? "bg-amber-800 text-white shadow-sm" : "text-gray-600 hover:text-gray-900"
+              )}>{t.label}</button>
+          ))}
         </div>
+
+        {period === "daily" && (
+          <Input type="date" value={dailyDate} max={todayStr()}
+            onChange={(e) => setDailyDate(e.target.value)} className="w-44 h-9" />
+        )}
+        {period === "weekly" && (
+          <Input type="date" value={weekDate} max={todayStr()}
+            onChange={(e) => setWeekDate(e.target.value)} className="w-44 h-9" />
+        )}
+        {period === "monthly" && (
+          <div className="flex gap-2">
+            <Select value={monthMonth.toString()} onValueChange={(v) => setMonthMonth(parseInt(v))}>
+              <SelectTrigger className="w-36 h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>{MONTHS.map((m, i) => <SelectItem key={i} value={i.toString()}>{m}</SelectItem>)}</SelectContent>
+            </Select>
+            <Select value={monthYear.toString()} onValueChange={(v) => setMonthYear(parseInt(v))}>
+              <SelectTrigger className="w-24 h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>{[2024, 2025, 2026, 2027].map((y) => <SelectItem key={y} value={y.toString()}>{y}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+        )}
+        {period === "custom" && (
+          <div className="flex items-center gap-1">
+            <Input type="date" value={customStart} max={customEnd}
+              onChange={(e) => setCustomStart(e.target.value)} className="w-40 h-9" />
+            <span className="text-xs text-muted-foreground">—</span>
+            <Input type="date" value={customEnd} min={customStart} max={todayStr()}
+              onChange={(e) => setCustomEnd(e.target.value)} className="w-40 h-9" />
+          </div>
+        )}
       </div>
 
       {loading ? (
-        <div className="space-y-4">
-          {[1, 2, 3].map((i) => <div key={i} className="h-32 bg-gray-100 rounded-xl animate-pulse" />)}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[1,2,3,4].map((i) => <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />)}
         </div>
-      ) : report && profit && menuSales && (
+      ) : s ? (
         <>
-          {/* ===== Profit Section ===== */}
-          <div className="grid grid-cols-3 gap-4">
-            <div className="rounded-xl border bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 p-5">
-              <p className="text-xs text-green-700 font-medium">💰 PENDAPATAN</p>
-              <p className="text-2xl md:text-3xl font-bold text-green-800 mt-1">{formatRupiah(profit.totalRevenue)}</p>
-              <p className="text-xs text-green-600 mt-1">{profit.revenueCount} transaksi</p>
-              {profit.revenueCount === 0 && (
-                <p className="text-xs text-gray-500 mt-1">Belum ada penjualan</p>
-              )}
+          {/* Summary Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="rounded-xl border bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 p-4">
+              <p className="text-xs text-green-700 font-medium">Pendapatan</p>
+              <p className="text-xl font-bold text-green-800 mt-1">{formatRupiah(s.totalRevenue)}</p>
+              {prev && <PctBadge cur={s.totalRevenue} prev={prev.revenue} />}
             </div>
+            <div className="rounded-xl border bg-gradient-to-br from-red-50 to-orange-50 border-red-200 p-4">
+              <p className="text-xs text-red-700 font-medium">Pengeluaran</p>
+              <p className="text-xl font-bold text-red-800 mt-1">{s.hasExpenses ? formatRupiah(s.totalExpenses) : formatRupiah(0)}</p>
+              {!s.hasExpenses && <span className="text-xs text-amber-600">⚠ Belum dicatat</span>}
+            </div>
+            <div className={cn("rounded-xl border p-4", s.profit >= 0 ? "bg-blue-50 border-blue-200" : "bg-red-50 border-red-300")}>
+              <p className={cn("text-xs font-medium", s.profit >= 0 ? "text-blue-700" : "text-red-700")}>Profit</p>
+              <p className={cn("text-xl font-bold mt-1", s.profit >= 0 ? "text-blue-800" : "text-red-800")}>{formatRupiah(s.profit)}</p>
+            </div>
+            <div className="rounded-xl border bg-white p-4">
+              <p className="text-xs text-muted-foreground">Transaksi</p>
+              <p className="text-xl font-bold mt-1">{s.totalCount}</p>
+              {prev && <PctBadge cur={s.totalCount} prev={prev.count} />}
+            </div>
+          </div>
 
-            <div className="rounded-xl border bg-gradient-to-br from-red-50 to-orange-50 border-red-200 p-5">
-              <p className="text-xs text-red-700 font-medium">📤 PENGELUARAN</p>
-              <p className="text-2xl md:text-3xl font-bold text-red-800 mt-1">{formatRupiah(profit.totalExpenses)}</p>
-              <p className="text-xs text-red-600 mt-1">{profit.expenseCount} entri</p>
-              {!profit.hasExpenses && (
-                <div className="mt-2">
-                  <Badge variant="outline" className="text-orange-600 border-orange-300 text-xs">
-                    ⚠️ Belum dicatat
-                  </Badge>
-                  <Link href="/dashboard/expenses" className="text-xs text-blue-600 hover:underline ml-2">
-                    Catat →
-                  </Link>
+          {/* Extra cards for multi-day */}
+          {period !== "daily" && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <div className="rounded-xl border bg-white p-4">
+                <p className="text-xs text-muted-foreground">Rata-rata / Hari</p>
+                <p className="text-lg font-bold mt-1">{formatRupiah(s.avgDailyRevenue)}</p>
+              </div>
+              {s.bestDay && (
+                <div className="rounded-xl border bg-green-50 border-green-200 p-4">
+                  <p className="text-xs text-green-700">📈 Hari Terbaik</p>
+                  <p className="text-lg font-bold text-green-800 mt-1">{formatRupiah(s.bestDay.revenue)}</p>
+                  <p className="text-xs text-green-600">{s.bestDay.dateFormatted}</p>
+                </div>
+              )}
+              {s.worstDay && s.worstDay.date !== s.bestDay?.date && (
+                <div className="rounded-xl border bg-red-50 border-red-200 p-4">
+                  <p className="text-xs text-red-700">📉 Hari Terendah</p>
+                  <p className="text-lg font-bold text-red-800 mt-1">{formatRupiah(s.worstDay.revenue)}</p>
+                  <p className="text-xs text-red-600">{s.worstDay.dateFormatted}</p>
                 </div>
               )}
             </div>
+          )}
 
-            <div className={cn(
-              "rounded-xl border p-5",
-              profit.profit >= 0
-                ? "bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200"
-                : "bg-gradient-to-br from-red-50 to-pink-50 border-red-300"
-            )}>
-              <p className={cn("text-xs font-medium", profit.profit >= 0 ? "text-blue-700" : "text-red-700")}>
-                📊 PROFIT
-              </p>
-              <p className={cn("text-2xl md:text-3xl font-bold mt-1", profit.profit >= 0 ? "text-blue-800" : "text-red-800")}>
-                {formatRupiah(profit.profit)}
-              </p>
-              {!profit.hasExpenses && (
-                <p className="text-xs text-orange-600 mt-1">= pendapatan (pengeluaran belum dicatat)</p>
-              )}
+          {/* Revenue Trend (multi-day only) */}
+          {data.daily.length > 1 && (
+            <div className="rounded-xl border bg-white p-5">
+              <h2 className="font-bold mb-4">Tren Pendapatan</h2>
+              <RevenueLine data={data.daily} />
+            </div>
+          )}
+
+          {/* Payment & Type */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-xl border bg-white p-5">
+              <h2 className="font-bold mb-4">Metode Pembayaran</h2>
+              <MethodPie data={[
+                { name: "Tunai", value: s.cash.revenue },
+                { name: "QRIS", value: s.qris.revenue },
+              ].filter((d) => d.value > 0)} />
+            </div>
+            <div className="rounded-xl border bg-white p-5">
+              <h2 className="font-bold mb-4">Tipe Pesanan</h2>
+              <MethodPie data={[
+                { name: "Dine-In", value: s.dineIn.revenue },
+                { name: "Takeaway", value: s.takeaway.revenue },
+              ].filter((d) => d.value > 0)} />
             </div>
           </div>
 
-          {/* ===== Sales Summary ===== */}
-          <div className="space-y-3">
-            <h2 className="font-bold text-lg">Detail Penjualan</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="rounded-xl border bg-white p-4">
-                <p className="text-xs text-muted-foreground">Jumlah Transaksi</p>
-                <p className="text-xl font-bold mt-1">{report.totalCount}</p>
-                <p className="text-xs text-muted-foreground mt-1">Rata-rata: {formatRupiah(report.avgPerTransaction)}</p>
-              </div>
-              <div className="rounded-xl border bg-white p-4">
-                <p className="text-xs text-muted-foreground">Tunai vs QRIS</p>
-                <div className="mt-2 space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span>Tunai ({report.cash.count})</span>
-                    <span className="font-bold">{formatRupiah(report.cash.revenue)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>QRIS ({report.qris.count})</span>
-                    <span className="font-bold">{formatRupiah(report.qris.revenue)}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border bg-white p-4">
-                <p className="text-xs text-muted-foreground">Dine-In vs Takeaway</p>
-                <div className="mt-2 space-y-1 text-sm">
-                  <div className="flex justify-between">
-                    <span>Dine-In ({report.dineIn.count})</span>
-                    <span className="font-bold">{formatRupiah(report.dineIn.revenue)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Takeaway ({report.takeaway.count})</span>
-                    <span className="font-bold">{formatRupiah(report.takeaway.revenue)}</span>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-xl border bg-white p-4">
-                <p className="text-xs text-muted-foreground">Menu Terjual</p>
-                <p className="text-xl font-bold mt-1">{menuSales.totalPortions} porsi</p>
-                <p className="text-xs text-muted-foreground mt-1">{menuSales.items.length} jenis menu</p>
-              </div>
-            </div>
-          </div>
-
-          {/* ===== Menu Sales Table ===== */}
-          <div className="space-y-3">
-            <h2 className="font-bold text-lg">Detail Penjualan Menu</h2>
-            <div className="bg-white rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10">#</TableHead>
-                    <TableHead>Menu</TableHead>
-                    <TableHead>Kategori</TableHead>
-                    <TableHead className="text-center">Porsi</TableHead>
-                    <TableHead className="text-right">Harga</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {menuSales.items.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">Belum ada penjualan</TableCell></TableRow>
-                  ) : (
-                    menuSales.items.map((item, i) => (
-                      <TableRow key={i}>
-                        <TableCell className="text-muted-foreground">{i + 1}</TableCell>
-                        <TableCell className="font-medium">{item.name}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground">{item.category}</TableCell>
-                        <TableCell className="text-center font-bold">{item.quantity}</TableCell>
-                        <TableCell className="text-right font-mono text-sm">{formatRupiah(item.price)}</TableCell>
-                        <TableCell className="text-right font-mono font-medium">{formatRupiah(item.total)}</TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-                {menuSales.items.length > 0 && (
-                  <TableFooter>
-                    <TableRow>
-                      <TableCell colSpan={3} className="font-bold">TOTAL</TableCell>
-                      <TableCell className="text-center font-bold">{menuSales.totalPortions}</TableCell>
-                      <TableCell />
-                      <TableCell className="text-right font-bold text-lg">{formatRupiah(menuSales.grandTotal)}</TableCell>
-                    </TableRow>
-                  </TableFooter>
-                )}
-              </Table>
-            </div>
-          </div>
-
-          {/* ===== Stock Summary ===== */}
-          <div className="space-y-3">
-            <h2 className="font-bold text-lg">Sisa Stok Etalase</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="rounded-xl border bg-red-50 border-red-200 p-4">
-                <h3 className="font-bold text-red-800 mb-3 flex items-center gap-2">
-                  Habis <Badge variant="destructive" className="text-xs">{report.stock.outOfStock.length}</Badge>
-                </h3>
-                {report.stock.outOfStock.length === 0 ? (
-                  <p className="text-sm text-red-600">Tidak ada menu yang habis</p>
-                ) : (
-                  <div className="space-y-1">
-                    {report.stock.outOfStock.map((item, i) => (
-                      <div key={i} className="flex justify-between text-sm">
-                        <span>{item.name}</span>
-                        <span className="text-red-600 font-medium">0/{item.initialStock}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="rounded-xl border bg-white p-4">
-                <h3 className="font-bold mb-3">Sisa Stok</h3>
-                {report.stock.remaining.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">Tidak ada data</p>
-                ) : (
-                  <div className="space-y-1 max-h-60 overflow-y-auto">
-                    {report.stock.remaining.map((item, i) => (
-                      <div key={i} className="flex justify-between text-sm">
-                        <span>{item.name}</span>
-                        <span className="font-medium">{item.currentStock}/{item.initialStock}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* ===== Charts ===== */}
-          {menuSales.items.length > 0 && (
+          {/* Top 10 Menu */}
+          {data.menuSales.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="rounded-xl border bg-white p-5">
-                <h3 className="font-bold mb-4">Top 5 Menu Terlaris</h3>
-                <RechartsBar data={menuSales.items.slice(0, 5)} />
+                <h2 className="font-bold mb-4">Top Menu Terlaris</h2>
+                <TopItemsBar data={data.menuSales.slice(0, 10)} />
               </div>
-              <div className="rounded-xl border bg-white p-5">
-                <h3 className="font-bold mb-4">Proporsi Metode Pembayaran</h3>
-                <RechartsPie
-                  data={[
-                    { name: "Tunai", value: report.cash.revenue },
-                    { name: "QRIS", value: report.qris.revenue },
-                  ].filter((d) => d.value > 0)}
-                />
+              <div className="rounded-xl border bg-white">
+                <div className="p-4 border-b"><h2 className="font-bold">Penjualan Menu</h2></div>
+                <div className="max-h-[350px] overflow-y-auto">
+                  <Table>
+                    <TableHeader><TableRow>
+                      <TableHead className="w-8">#</TableHead><TableHead>Menu</TableHead>
+                      <TableHead className="text-center">Porsi</TableHead><TableHead className="text-right">Pendapatan</TableHead>
+                    </TableRow></TableHeader>
+                    <TableBody>
+                      {data.menuSales.map((m: any, i: number) => (
+                        <TableRow key={i}>
+                          <TableCell className="text-muted-foreground">{i + 1}</TableCell>
+                          <TableCell className="font-medium">{m.name}</TableCell>
+                          <TableCell className="text-center font-bold">{m.qty}</TableCell>
+                          <TableCell className="text-right font-mono">{formatRupiah(m.revenue)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               </div>
             </div>
           )}
+
+          {/* Daily Breakdown Table (multi-day) */}
+          {data.daily.length > 1 && (
+            <div className="rounded-xl border bg-white">
+              <div className="p-4 border-b"><h2 className="font-bold">Breakdown Harian</h2></div>
+              <div className="max-h-[500px] overflow-y-auto">
+                <Table>
+                  <TableHeader><TableRow>
+                    <TableHead>Tanggal</TableHead><TableHead className="text-right">Pendapatan</TableHead>
+                    <TableHead className="text-right">Pengeluaran</TableHead><TableHead className="text-right">Profit</TableHead>
+                    <TableHead className="text-center">Trx</TableHead>
+                  </TableRow></TableHeader>
+                  <TableBody>
+                    {data.daily.map((d: any) => {
+                      const isBest = s.bestDay && d.date === s.bestDay.date
+                      const isWorst = s.worstDay && d.date === s.worstDay.date && d.date !== s.bestDay?.date
+                      return (
+                        <TableRow key={d.date} className={isBest ? "bg-green-50" : isWorst ? "bg-red-50" : ""}>
+                          <TableCell className="font-medium text-sm">{d.date}</TableCell>
+                          <TableCell className="text-right font-mono">{formatRupiah(d.revenue)}</TableCell>
+                          <TableCell className="text-right font-mono">{formatRupiah(d.expenses)}</TableCell>
+                          <TableCell className="text-right font-mono">{formatRupiah(d.profit)}</TableCell>
+                          <TableCell className="text-center">{d.count}</TableCell>
+                        </TableRow>
+                      )
+                    })}
+                    <TableRow className="bg-gray-100 font-bold">
+                      <TableCell>TOTAL</TableCell>
+                      <TableCell className="text-right font-mono">{formatRupiah(s.totalRevenue)}</TableCell>
+                      <TableCell className="text-right font-mono">{formatRupiah(s.totalExpenses)}</TableCell>
+                      <TableCell className="text-right font-mono">{formatRupiah(s.profit)}</TableCell>
+                      <TableCell className="text-center">{s.totalCount}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          {/* Expenses Table */}
+          {data.expenseList.length > 0 && (
+            <div className="rounded-xl border bg-white">
+              <div className="p-4 border-b"><h2 className="font-bold">Daftar Pengeluaran</h2></div>
+              <div className="max-h-[400px] overflow-y-auto">
+                <Table>
+                  <TableHeader><TableRow>
+                    <TableHead>Tanggal</TableHead><TableHead>Deskripsi</TableHead>
+                    <TableHead className="text-right">Jumlah</TableHead><TableHead>Dicatat</TableHead>
+                  </TableRow></TableHeader>
+                  <TableBody>
+                    {data.expenseList.map((e: any, i: number) => (
+                      <TableRow key={i}>
+                        <TableCell className="text-sm">{e.date}</TableCell>
+                        <TableCell>{e.description}</TableCell>
+                        <TableCell className="text-right font-mono">{formatRupiah(e.amount)}</TableCell>
+                        <TableCell className="text-sm">{e.recordedBy}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-gray-100 font-bold">
+                      <TableCell>TOTAL</TableCell><TableCell></TableCell>
+                      <TableCell className="text-right font-mono">{formatRupiah(s.totalExpenses)}</TableCell>
+                      <TableCell></TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          {/* No data */}
+          {s.totalCount === 0 && (
+            <div className="text-center py-12 text-muted-foreground">
+              <Calendar className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+              <p className="font-medium">Tidak ada transaksi untuk periode ini</p>
+            </div>
+          )}
         </>
-      )}
+      ) : null}
     </div>
   )
 }

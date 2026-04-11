@@ -1,7 +1,3 @@
-import jsPDF from "jspdf"
-import autoTable from "jspdf-autotable"
-import * as XLSX from "xlsx"
-
 type ExportData = {
   date: string
   dateFormatted: string
@@ -33,207 +29,114 @@ export async function fetchExportData(date: string): Promise<ExportData | null> 
 }
 
 export function exportPDF(data: ExportData) {
-  const doc = new jsPDF()
-  const pageWidth = doc.internal.pageSize.getWidth()
-  let y = 15
+  const grandTotal = data.menuSales.reduce((s, m) => s + m.total, 0)
+  const totalPortions = data.menuSales.reduce((s, m) => s + m.quantity, 0)
 
-  // Header
-  doc.setFontSize(14)
-  doc.setFont("helvetica", "bold")
-  doc.text("LAPORAN PENJUALAN HARIAN", pageWidth / 2, y, { align: "center" })
-  y += 7
-  doc.setFontSize(12)
-  doc.text("RM. ETEK MINANG", pageWidth / 2, y, { align: "center" })
-  y += 7
-  doc.setFontSize(10)
-  doc.setFont("helvetica", "normal")
-  doc.text(data.dateFormatted, pageWidth / 2, y, { align: "center" })
-  y += 10
+  const html = `<!DOCTYPE html>
+<html><head><title>Laporan Harian - ${data.dateFormatted}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; font-size: 11px; padding: 15mm; color: #333; }
+  h1 { font-size: 16px; text-align: center; margin-bottom: 2px; }
+  h2 { font-size: 13px; text-align: center; margin-bottom: 4px; color: #666; }
+  .date { text-align: center; margin-bottom: 15px; color: #888; font-size: 11px; }
+  .section { margin-top: 18px; margin-bottom: 8px; font-size: 13px; font-weight: bold; border-bottom: 2px solid #b45309; padding-bottom: 3px; color: #92400e; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  th { background: #92400e; color: white; padding: 6px 8px; text-align: left; font-size: 10px; }
+  td { padding: 5px 8px; border-bottom: 1px solid #e5e7eb; font-size: 10px; }
+  tr:nth-child(even) { background: #fef9ee; }
+  .right { text-align: right; }
+  .center { text-align: center; }
+  .bold { font-weight: bold; }
+  .total-row { background: #f5f5f5 !important; font-weight: bold; }
+  .footer { margin-top: 20px; text-align: center; font-size: 9px; color: #999; border-top: 1px solid #ddd; padding-top: 8px; }
+  .note { color: #d97706; font-style: italic; }
+  @media print { body { padding: 10mm; } @page { size: A4; margin: 10mm; } }
+</style>
+</head><body>
+<h1>LAPORAN PENJUALAN HARIAN</h1>
+<h2>RM. ETEK MINANG</h2>
+<div class="date">${data.dateFormatted}</div>
 
-  // Line
-  doc.setDrawColor(180)
-  doc.line(14, y, pageWidth - 14, y)
-  y += 6
+<div class="section">RINGKASAN</div>
+<table>
+  <tr><td>Total Pendapatan</td><td class="right bold">${fmtRp(data.summary.totalRevenue)}</td></tr>
+  <tr><td>Total Pengeluaran</td><td class="right bold">${data.summary.hasExpenses ? fmtRp(data.summary.totalExpenses) : fmtRp(0) + ' <span class="note">(belum dicatat)</span>'}</td></tr>
+  <tr><td>Profit</td><td class="right bold">${fmtRp(data.summary.profit)}</td></tr>
+  <tr><td>Jumlah Transaksi</td><td class="right bold">${data.summary.transactionCount}</td></tr>
+  <tr><td>Tunai</td><td class="right">${data.summary.cash.count} transaksi — ${fmtRp(data.summary.cash.revenue)}</td></tr>
+  <tr><td>QRIS</td><td class="right">${data.summary.qris.count} transaksi — ${fmtRp(data.summary.qris.revenue)}</td></tr>
+  <tr><td>Dine-In</td><td class="right">${data.summary.dineIn.count} transaksi — ${fmtRp(data.summary.dineIn.revenue)}</td></tr>
+  <tr><td>Takeaway</td><td class="right">${data.summary.takeaway.count} transaksi — ${fmtRp(data.summary.takeaway.revenue)}</td></tr>
+</table>
 
-  // Summary Table
-  doc.setFontSize(11)
-  doc.setFont("helvetica", "bold")
-  doc.text("RINGKASAN", 14, y)
-  y += 4
+${data.menuSales.length > 0 ? `
+<div class="section">DETAIL PENJUALAN MENU</div>
+<table>
+  <tr><th class="center">No</th><th>Menu</th><th>Kategori</th><th class="center">Porsi</th><th class="right">Harga</th><th class="right">Total</th></tr>
+  ${data.menuSales.map((m, i) => `<tr><td class="center">${i + 1}</td><td>${m.name}</td><td>${m.category}</td><td class="center">${m.quantity}</td><td class="right">${fmtRp(m.price)}</td><td class="right">${fmtRp(m.total)}</td></tr>`).join("")}
+  <tr class="total-row"><td></td><td>TOTAL</td><td></td><td class="center">${totalPortions}</td><td></td><td class="right">${fmtRp(grandTotal)}</td></tr>
+</table>` : ""}
 
-  const summaryRows = [
-    ["Total Pendapatan", fmtRp(data.summary.totalRevenue)],
-    ["Total Pengeluaran", data.summary.hasExpenses ? fmtRp(data.summary.totalExpenses) : fmtRp(0) + " (belum dicatat)"],
-    ["Profit", fmtRp(data.summary.profit)],
-    ["Jumlah Transaksi", data.summary.transactionCount.toString()],
-    ["Tunai", `${data.summary.cash.count} transaksi - ${fmtRp(data.summary.cash.revenue)}`],
-    ["QRIS", `${data.summary.qris.count} transaksi - ${fmtRp(data.summary.qris.revenue)}`],
-    ["Dine-In", `${data.summary.dineIn.count} transaksi - ${fmtRp(data.summary.dineIn.revenue)}`],
-    ["Takeaway", `${data.summary.takeaway.count} transaksi - ${fmtRp(data.summary.takeaway.revenue)}`],
-  ]
+${data.expenses.length > 0 ? `
+<div class="section">DAFTAR PENGELUARAN</div>
+<table>
+  <tr><th class="center">No</th><th>Deskripsi</th><th class="right">Jumlah</th><th>Dicatat</th><th>Waktu</th></tr>
+  ${data.expenses.map((e, i) => `<tr><td class="center">${i + 1}</td><td>${e.description}</td><td class="right">${fmtRp(e.amount)}</td><td>${e.recordedBy}</td><td>${e.time}</td></tr>`).join("")}
+  <tr class="total-row"><td></td><td>TOTAL</td><td class="right">${fmtRp(data.summary.totalExpenses)}</td><td></td><td></td></tr>
+</table>` : ""}
 
-  autoTable(doc, {
-    startY: y,
-    head: [["Keterangan", "Nilai"]],
-    body: summaryRows,
-    theme: "grid",
-    headStyles: { fillColor: [180, 83, 9], fontSize: 9 },
-    bodyStyles: { fontSize: 9 },
-    columnStyles: { 0: { cellWidth: 60 }, 1: { halign: "right" } },
-    margin: { left: 14, right: 14 },
-  })
+<div class="footer">Generated by POS System RM. Etek Minang — ${new Date().toLocaleString("id-ID")}</div>
+</body></html>`
 
-  y = (doc as any).lastAutoTable.finalY + 10
-
-  // Menu Sales Table
-  if (data.menuSales.length > 0) {
-    doc.setFontSize(11)
-    doc.setFont("helvetica", "bold")
-    doc.text("DETAIL PENJUALAN MENU", 14, y)
-    y += 4
-
-    const menuRows = data.menuSales.map((m, i) => [
-      (i + 1).toString(), m.name, m.category, m.quantity.toString(), fmtRp(m.price), fmtRp(m.total),
-    ])
-    const grandTotal = data.menuSales.reduce((s, m) => s + m.total, 0)
-    const totalPortions = data.menuSales.reduce((s, m) => s + m.quantity, 0)
-    menuRows.push(["", "TOTAL", "", totalPortions.toString(), "", fmtRp(grandTotal)])
-
-    autoTable(doc, {
-      startY: y,
-      head: [["No", "Menu", "Kategori", "Porsi", "Harga", "Total"]],
-      body: menuRows,
-      theme: "grid",
-      headStyles: { fillColor: [180, 83, 9], fontSize: 8 },
-      bodyStyles: { fontSize: 8 },
-      columnStyles: {
-        0: { cellWidth: 10, halign: "center" },
-        3: { halign: "center" },
-        4: { halign: "right" },
-        5: { halign: "right" },
-      },
-      margin: { left: 14, right: 14 },
-      didParseCell: (hookData) => {
-        if (hookData.row.index === menuRows.length - 1 && hookData.section === "body") {
-          hookData.cell.styles.fontStyle = "bold"
-          hookData.cell.styles.fillColor = [245, 245, 245]
-        }
-      },
-    })
-
-    y = (doc as any).lastAutoTable.finalY + 10
-  }
-
-  // Expenses Table
-  if (data.expenses.length > 0) {
-    if (y > 240) { doc.addPage(); y = 15 }
-
-    doc.setFontSize(11)
-    doc.setFont("helvetica", "bold")
-    doc.text("DAFTAR PENGELUARAN", 14, y)
-    y += 4
-
-    const expRows = data.expenses.map((e, i) => [
-      (i + 1).toString(), e.description, fmtRp(e.amount), e.recordedBy, e.time,
-    ])
-    expRows.push(["", "TOTAL", fmtRp(data.summary.totalExpenses), "", ""])
-
-    autoTable(doc, {
-      startY: y,
-      head: [["No", "Deskripsi", "Jumlah", "Dicatat", "Waktu"]],
-      body: expRows,
-      theme: "grid",
-      headStyles: { fillColor: [180, 83, 9], fontSize: 8 },
-      bodyStyles: { fontSize: 8 },
-      columnStyles: {
-        0: { cellWidth: 10, halign: "center" },
-        2: { halign: "right" },
-      },
-      margin: { left: 14, right: 14 },
-      didParseCell: (hookData) => {
-        if (hookData.row.index === expRows.length - 1 && hookData.section === "body") {
-          hookData.cell.styles.fontStyle = "bold"
-          hookData.cell.styles.fillColor = [245, 245, 245]
-        }
-      },
-    })
-  }
-
-  // Footer
-  const pageCount = doc.getNumberOfPages()
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i)
-    doc.setFontSize(8)
-    doc.setFont("helvetica", "normal")
-    doc.setTextColor(150)
-    const footerY = doc.internal.pageSize.getHeight() - 10
-    doc.text(
-      `Generated by POS System RM. Etek Minang — ${new Date().toLocaleString("id-ID")}`,
-      pageWidth / 2, footerY, { align: "center" }
-    )
-    doc.text(`Halaman ${i}/${pageCount}`, pageWidth - 14, footerY, { align: "right" })
-  }
-
-  doc.save(`Laporan_Harian_${data.date.replace(/-/g, "")}.pdf`)
+  const win = window.open("", "_blank", "width=800,height=600")
+  if (!win) { alert("Pop-up diblokir browser. Izinkan pop-up untuk mencetak."); return }
+  win.document.write(html)
+  win.document.close()
+  win.onload = () => { win.print(); win.onafterprint = () => win.close() }
 }
 
-export function exportExcel(data: ExportData) {
+export async function exportExcel(data: ExportData) {
+  const XLSX = await import("xlsx")
   const wb = XLSX.utils.book_new()
 
-  // Sheet 1: Summary
   const summaryData = [
-    ["LAPORAN PENJUALAN HARIAN - RM. ETEK MINANG"],
-    [data.dateFormatted],
-    [],
+    ["LAPORAN PENJUALAN HARIAN - RM. ETEK MINANG"], [data.dateFormatted], [],
     ["Keterangan", "Nilai"],
     ["Total Pendapatan", data.summary.totalRevenue],
     ["Total Pengeluaran", data.summary.totalExpenses],
     ["Profit", data.summary.profit],
     ["Jumlah Transaksi", data.summary.transactionCount],
-    [],
-    ["Metode", "Transaksi", "Pendapatan"],
+    [], ["Metode", "Transaksi", "Pendapatan"],
     ["Tunai", data.summary.cash.count, data.summary.cash.revenue],
     ["QRIS", data.summary.qris.count, data.summary.qris.revenue],
-    [],
-    ["Tipe", "Transaksi", "Pendapatan"],
+    [], ["Tipe", "Transaksi", "Pendapatan"],
     ["Dine-In", data.summary.dineIn.count, data.summary.dineIn.revenue],
     ["Takeaway", data.summary.takeaway.count, data.summary.takeaway.revenue],
   ]
-  if (!data.summary.hasExpenses) {
-    summaryData.push([], ["Catatan: Pengeluaran belum dicatat untuk tanggal ini"])
-  }
+  if (!data.summary.hasExpenses) summaryData.push([], ["Catatan: Pengeluaran belum dicatat"])
   const ws1 = XLSX.utils.aoa_to_sheet(summaryData)
   ws1["!cols"] = [{ wch: 25 }, { wch: 15 }, { wch: 18 }]
   XLSX.utils.book_append_sheet(wb, ws1, "Ringkasan")
 
-  // Sheet 2: Menu Sales
-  const salesHeader = [["No", "Menu", "Kategori", "Porsi Terjual", "Harga Satuan", "Total"]]
   const salesRows = data.menuSales.map((m, i) => [i + 1, m.name, m.category, m.quantity, m.price, m.total])
-  const totalPortions = data.menuSales.reduce((s, m) => s + m.quantity, 0)
-  const grandTotal = data.menuSales.reduce((s, m) => s + m.total, 0)
-  salesRows.push(["", "TOTAL", "", totalPortions, "", grandTotal])
-  const ws2 = XLSX.utils.aoa_to_sheet([...salesHeader, ...salesRows])
+  const tp = data.menuSales.reduce((s, m) => s + m.quantity, 0)
+  const gt = data.menuSales.reduce((s, m) => s + m.total, 0)
+  salesRows.push(["", "TOTAL", "", tp, "", gt])
+  const ws2 = XLSX.utils.aoa_to_sheet([["No", "Menu", "Kategori", "Porsi", "Harga", "Total"], ...salesRows])
   ws2["!cols"] = [{ wch: 5 }, { wch: 25 }, { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 18 }]
   XLSX.utils.book_append_sheet(wb, ws2, "Penjualan Menu")
 
-  // Sheet 3: Expenses
-  const expHeader = [["No", "Deskripsi", "Jumlah", "Dicatat Oleh", "Waktu"]]
   const expRows = data.expenses.map((e, i) => [i + 1, e.description, e.amount, e.recordedBy, e.time])
-  if (data.expenses.length > 0) {
-    expRows.push(["", "TOTAL", data.summary.totalExpenses, "", ""])
-  }
+  if (data.expenses.length > 0) expRows.push(["", "TOTAL", data.summary.totalExpenses, "", ""])
   const ws3 = XLSX.utils.aoa_to_sheet(data.expenses.length > 0
-    ? [...expHeader, ...expRows]
-    : [["Belum ada pengeluaran yang dicatat"]])
+    ? [["No", "Deskripsi", "Jumlah", "Dicatat", "Waktu"], ...expRows]
+    : [["Belum ada pengeluaran"]])
   ws3["!cols"] = [{ wch: 5 }, { wch: 35 }, { wch: 18 }, { wch: 18 }, { wch: 10 }]
   XLSX.utils.book_append_sheet(wb, ws3, "Pengeluaran")
 
-  // Sheet 4: Transactions
-  const txHeader = [["No. Pesanan", "Waktu", "Tipe", "Metode", "Total", "Kasir", "Item"]]
-  const txRows = data.transactions.map((tx) => [
-    tx.orderNumber, tx.time, tx.type, tx.method, tx.total, tx.cashier, tx.items,
-  ])
-  const ws4 = XLSX.utils.aoa_to_sheet([...txHeader, ...txRows])
+  const txRows = data.transactions.map((tx) => [tx.orderNumber, tx.time, tx.type, tx.method, tx.total, tx.cashier, tx.items])
+  const ws4 = XLSX.utils.aoa_to_sheet([["No. Pesanan", "Waktu", "Tipe", "Metode", "Total", "Kasir", "Item"], ...txRows])
   ws4["!cols"] = [{ wch: 22 }, { wch: 8 }, { wch: 10 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 50 }]
   XLSX.utils.book_append_sheet(wb, ws4, "Transaksi")
 
