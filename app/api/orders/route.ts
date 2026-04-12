@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
       include: {
         items: { include: { menuItem: true } },
         createdBy: { select: { id: true, name: true } },
-        transaction: true,
+        transactions: true,
       },
       orderBy: { createdAt: "desc" },
     })

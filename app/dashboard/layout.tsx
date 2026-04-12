@@ -13,6 +13,7 @@ import {
   Settings,
   QrCode,
   TrendingUp,
+  ShieldCheck,
 } from "lucide-react"
 
 const DASHBOARD_NAV: SidebarItem[] = [
@@ -20,6 +21,7 @@ const DASHBOARD_NAV: SidebarItem[] = [
   { label: "Transaksi", href: "/dashboard/transactions", icon: Receipt },
   { label: "Laporan", href: "/dashboard/reports", icon: BarChart3 },
   { label: "Analitik", href: "/dashboard/analytics", icon: TrendingUp },
+  { label: "Persetujuan", href: "/dashboard/approvals", icon: ShieldCheck },
   { label: "Pengeluaran", href: "/dashboard/expenses", icon: Wallet },
   { label: "Kategori", href: "/dashboard/categories", icon: List },
   { label: "Stok & Menu", href: "/dashboard/menu", icon: Package },

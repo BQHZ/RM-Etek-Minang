@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
     // Menu sales
     const orderItems = await prisma.orderItem.findMany({
       where: {
-        order: { status: "PAID", transaction: { paidAt: { gte: start, lte: end } } },
+        order: { status: "PAID", transactions: { some: { paidAt: { gte: start, lte: end } } } },
       },
       include: { menuItem: { select: { name: true, category: { select: { name: true } } } } },
     })

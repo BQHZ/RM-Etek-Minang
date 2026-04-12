@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     const { start, end } = parseDateRange(sp.get("startDate"), sp.get("endDate"))
 
     const items = await prisma.orderItem.findMany({
-      where: { order: { status: "PAID", transaction: { paidAt: { gte: start, lte: end } } } },
+      where: { order: { status: "PAID", transactions: { some: { paidAt: { gte: start, lte: end } } } } },
       include: { menuItem: { select: { name: true, category: { select: { name: true } } } } },
     })
 

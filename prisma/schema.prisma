@@ -23,6 +23,7 @@ enum OrderType {
 enum OrderStatus {
   PENDING_CONFIRMATION
   OPEN
+  PARTIALLY_PAID
   PAID
   CANCELLED
 }
@@ -37,6 +38,18 @@ enum OrderSource {
   ONLINE
 }
 
+enum ModRequestType {
+  EDIT_ITEM
+  REMOVE_ITEM
+  CANCEL_ORDER
+}
+
+enum ModRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum StockChangeType {
   SOLD
   RESTOCK
@@ -44,15 +57,17 @@ enum StockChangeType {
 }
 
 model User {
-  id        String    @id @default(cuid())
-  name      String
-  username  String    @unique
-  pin       String
-  role      Role
-  isActive  Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  orders    Order[]
-  expenses  Expense[]
+  id                    String                     @id @default(cuid())
+  name                  String
+  username              String                     @unique
+  pin                   String
+  role                  Role
+  isActive              Boolean                    @default(true)
+  createdAt             DateTime                   @default(now())
+  orders                Order[]
+  expenses              Expense[]
+  modRequestsMade       OrderModificationRequest[]  @relation("requestedBy")
+  modRequestsReviewed   OrderModificationRequest[]  @relation("reviewedBy")
 }
 
 model Category {
@@ -92,8 +107,9 @@ model Order {
   createdBy     User?       @relation(fields: [createdById], references: [id])
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
-  items       OrderItem[]
-  transaction Transaction?
+  items                 OrderItem[]
+  transactions          Transaction[]
+  modificationRequests  OrderModificationRequest[]
 }
 
 model OrderItem {
@@ -109,12 +125,16 @@ model OrderItem {
 
 model Transaction {
   id            String        @id @default(cuid())
-  orderId       String        @unique
+  orderId       String
   order         Order         @relation(fields: [orderId], references: [id])
   totalAmount   Int
   paymentMethod PaymentMethod
   cashReceived  Int?
   changeAmount  Int?
+  splitGroup    String?
+  splitLabel    String?
+  isVoid        Boolean       @default(false)
+  voidReason    String?
   paidAt        DateTime      @default(now())
 }
 
@@ -145,4 +165,21 @@ model RestockNotification {
   isResolved Boolean   @default(false)
   createdAt  DateTime  @default(now())
   resolvedAt DateTime?
+}
+
+model OrderModificationRequest {
+  id            String           @id @default(cuid())
+  orderId       String
+  order         Order            @relation(fields: [orderId], references: [id])
+  requestedById String
+  requestedBy   User             @relation("requestedBy", fields: [requestedById], references: [id])
+  type          ModRequestType
+  details       String           @db.Text
+  reason        String
+  status        ModRequestStatus @default(PENDING)
+  reviewedById  String?
+  reviewedBy    User?            @relation("reviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt    DateTime?
+  reviewNote    String?
+  createdAt     DateTime         @default(now())
 }

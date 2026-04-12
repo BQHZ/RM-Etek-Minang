@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     // Fetch order with items
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      include: { items: true, transaction: true },
+      include: { items: true, transactions: true },
     })
 
     if (!order) {
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (order.status === "PAID" || order.transaction) {
+    if (order.status === "PAID" || order.transactions.length > 0) {
       return NextResponse.json(
         { success: false, error: "Pesanan sudah dibayar" },
         { status: 400 }

@@ -85,7 +85,7 @@ async function main() {
           items: {
             create: orderItems,
           },
-          transaction: {
+          transactions: {
             create: {
               totalAmount,
               paymentMethod,
