@@ -85,14 +85,20 @@ export default function PosPage() {
   const isEditingExisting = !!editingOrderId
 
   /* ---------- fetch data ---------- */
+  const fetchInit = useCallback(async () => {
+    const res = await fetch("/api/pos/init")
+    const data = await res.json()
+    if (data.success) {
+      setCategories(data.data.categories)
+      setMenuItems(data.data.menuItems.filter((m: MenuItem) => m.isActive))
+      setOpenOrders(data.data.openOrders)
+    }
+  }, [])
+
   const fetchMenu = useCallback(async () => {
-    const [catRes, menuRes] = await Promise.all([
-      fetch("/api/categories"),
-      fetch("/api/menu-items"),
-    ])
-    const [catData, menuData] = await Promise.all([catRes.json(), menuRes.json()])
-    if (catData.success) setCategories(catData.data)
-    if (menuData.success) setMenuItems(menuData.data.filter((m: MenuItem) => m.isActive))
+    const res = await fetch("/api/menu-items")
+    const data = await res.json()
+    if (data.success) setMenuItems(data.data.filter((m: MenuItem) => m.isActive))
   }, [])
 
   const fetchOpenOrders = useCallback(async () => {
@@ -101,7 +107,7 @@ export default function PosPage() {
     if (data.success) setOpenOrders(data.data)
   }, [])
 
-  useEffect(() => { fetchMenu(); fetchOpenOrders() }, [fetchMenu, fetchOpenOrders])
+  useEffect(() => { fetchInit() }, [fetchInit])
 
   /* ---------- cart logic ---------- */
   const filteredMenu = activeCat === "all"

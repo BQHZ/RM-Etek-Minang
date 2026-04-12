@@ -58,17 +58,28 @@ export default function DashboardPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const [tRes, yRes, wRes] = await Promise.all([
-      fetch(`/api/reports/profit?date=${todayISO}`),
-      fetch(`/api/reports/profit?date=${yestISO}`),
-      fetch("/api/reports/profit/weekly"),
-    ])
-    const [tData, yData, wData] = await Promise.all([tRes.json(), yRes.json(), wRes.json()])
-    if (tData.success) setToday(tData.data)
-    if (yData.success) setYesterday(yData.data)
-    if (wData.success) setWeekly(wData.data)
+    const res = await fetch("/api/dashboard/summary")
+    const data = await res.json()
+    if (data.success) {
+      const d = data.data
+      setToday({
+        totalRevenue: d.today.revenue,
+        revenueCount: d.today.count,
+        totalExpenses: d.today.expenses,
+        expenseCount: d.today.hasExpenses ? 1 : 0,
+        profit: d.today.profit,
+        hasExpenses: d.today.hasExpenses,
+      })
+      setYesterday({
+        totalRevenue: d.yesterdayRevenue,
+        revenueCount: 0, totalExpenses: 0, expenseCount: 0, profit: 0, hasExpenses: false,
+      })
+      setWeekly(d.weekly.map((w: any) => ({
+        date: w.date, dateISO: "", revenue: w.revenue, expenses: 0, profit: w.profit, txCount: 0,
+      })))
+    }
     setLoading(false)
-  }, [todayISO, yestISO])
+  }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -97,7 +108,7 @@ export default function DashboardPage() {
             <div className="rounded-xl border bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 p-5">
               <div className="flex items-center gap-2 text-green-700 mb-1">
                 <Banknote className="h-4 w-4" />
-                <span className="text-xs font-medium">Pendapatan</span>
+                <span className="text-xs font-medium">💰 Pendapatan</span>
               </div>
               <p className="text-xl md:text-2xl font-bold text-green-800">{formatRupiah(today.totalRevenue)}</p>
               <p className="text-xs text-green-600 mt-1">{today.revenueCount} transaksi</p>
@@ -113,7 +124,7 @@ export default function DashboardPage() {
             <div className="rounded-xl border bg-gradient-to-br from-red-50 to-orange-50 border-red-200 p-5">
               <div className="flex items-center gap-2 text-red-700 mb-1">
                 <Wallet className="h-4 w-4" />
-                <span className="text-xs font-medium">Pengeluaran</span>
+                <span className="text-xs font-medium">📤 Pengeluaran</span>
               </div>
               <p className="text-xl md:text-2xl font-bold text-red-800">{formatRupiah(today.totalExpenses)}</p>
               <p className="text-xs text-red-600 mt-1">{today.expenseCount} entri</p>
@@ -131,7 +142,7 @@ export default function DashboardPage() {
             )}>
               <div className={cn("flex items-center gap-2 mb-1", today.profit >= 0 ? "text-blue-700" : "text-red-700")}>
                 <BarChart3 className="h-4 w-4" />
-                <span className="text-xs font-medium">Profit</span>
+                <span className="text-xs font-medium">📊 Profit</span>
               </div>
               <p className={cn("text-xl md:text-2xl font-bold", today.profit >= 0 ? "text-blue-800" : "text-red-800")}>
                 {formatRupiah(today.profit)}
