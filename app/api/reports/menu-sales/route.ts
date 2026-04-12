@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       where: {
         order: {
           status: "PAID",
-          transactions: { some: { paidAt: { gte: start, lte: end } },
+          transactions: { some: { paidAt: { gte: start, lte: end } } },
         },
       },
       include: {
