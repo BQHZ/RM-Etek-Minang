@@ -13,6 +13,7 @@ import {
   UtensilsCrossed, Package as PackageIcon, Lock, Users,
 } from "lucide-react"
 import { formatRupiah, cn } from "@/lib/utils"
+import { cachedFetch, invalidateCache } from "@/lib/cache"
 import PaymentDialog from "@/components/payment-dialog"
 import ModRequestDialog from "@/components/mod-request-dialog"
 import SplitBillDialog from "@/components/split-bill-dialog"
@@ -86,8 +87,7 @@ export default function PosPage() {
 
   /* ---------- fetch data ---------- */
   const fetchInit = useCallback(async () => {
-    const res = await fetch("/api/pos/init")
-    const data = await res.json()
+    const data = await cachedFetch("/api/pos/init", 15000)
     if (data.success) {
       setCategories(data.data.categories)
       setMenuItems(data.data.menuItems.filter((m: MenuItem) => m.isActive))
@@ -96,15 +96,15 @@ export default function PosPage() {
   }, [])
 
   const fetchMenu = useCallback(async () => {
-    const res = await fetch("/api/menu-items")
-    const data = await res.json()
-    if (data.success) setMenuItems(data.data.filter((m: MenuItem) => m.isActive))
+    invalidateCache("/api/pos")
+    const data = await cachedFetch("/api/pos/init", 0)
+    if (data.success) setMenuItems(data.data.menuItems.filter((m: MenuItem) => m.isActive))
   }, [])
 
   const fetchOpenOrders = useCallback(async () => {
-    const res = await fetch("/api/orders?status=OPEN&date=today")
-    const data = await res.json()
-    if (data.success) setOpenOrders(data.data)
+    invalidateCache("/api/pos")
+    const data = await cachedFetch("/api/pos/init", 0)
+    if (data.success) setOpenOrders(data.data.openOrders)
   }, [])
 
   useEffect(() => { fetchInit() }, [fetchInit])

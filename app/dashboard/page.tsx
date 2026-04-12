@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { useSession } from "@/components/session-provider"
 import { formatRupiah } from "@/lib/utils"
+import { cachedFetch } from "@/lib/cache"
 import {
   TrendingUp, TrendingDown, Receipt, Banknote, BarChart3, Wallet,
 } from "lucide-react"
@@ -58,8 +59,7 @@ export default function DashboardPage() {
 
   const fetchData = useCallback(async () => {
     setLoading(true)
-    const res = await fetch("/api/dashboard/summary")
-    const data = await res.json()
+    const data = await cachedFetch("/api/dashboard/summary", 30000)
     if (data.success) {
       const d = data.data
       setToday({

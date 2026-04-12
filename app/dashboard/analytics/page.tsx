@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/select"
 import { TrendingUp, TrendingDown } from "lucide-react"
 import { formatRupiah, cn } from "@/lib/utils"
+import { cachedFetch } from "@/lib/cache"
 import dynamic from "next/dynamic"
 
 const Loader = () => <div className="h-[250px] bg-gray-50 rounded-lg animate-pulse" />
@@ -57,8 +58,7 @@ export default function AnalyticsPage() {
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const res = await fetch(`/api/analytics/all?startDate=${startDate}&endDate=${endDate}`)
-    const data = await res.json()
+    const data = await cachedFetch(`/api/analytics/all?startDate=${startDate}&endDate=${endDate}`, 60000)
     if (data.success) {
       setRevenue(data.data.revenue)
       setComparison(data.data.comparison)
