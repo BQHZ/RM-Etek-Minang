@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate order number: count today's orders + 1
+    // Generate unique order number
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
     const todayCount = await prisma.order.count({
