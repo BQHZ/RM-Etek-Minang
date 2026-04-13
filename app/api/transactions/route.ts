@@ -13,8 +13,8 @@ export async function GET(request: NextRequest) {
 
     if (dateParam) {
       const date = new Date(dateParam)
-      const start = new Date(date); start.setHours(0, 0, 0, 0)
-      const end = new Date(date); end.setHours(23, 59, 59, 999)
+      const start = new Date(`${date}T00:00:00+07:00`)
+      const end = new Date(`${date}T23:59:59+07:00`)
       where.paidAt = { gte: start, lte: end }
     }
 
