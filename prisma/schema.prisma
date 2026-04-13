@@ -103,6 +103,7 @@ model Order {
   tableNumber   Int?
   customerNote  String?
   rejectReason  String?
+  splitPlan     String?     @db.Text
   createdById   String?
   createdBy     User?       @relation(fields: [createdById], references: [id])
   createdAt     DateTime    @default(now())

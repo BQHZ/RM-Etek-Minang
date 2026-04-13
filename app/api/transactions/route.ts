@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
     const transactions = await prisma.transaction.findMany({
       where: {
         ...where,
+        isVoid: false,
         order: Object.keys(orderWhere).length > 0 ? orderWhere : undefined,
       },
       include: {
