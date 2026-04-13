@@ -85,6 +85,9 @@ export async function GET(
         payments: order.transactions.map((t) => ({
           id: t.id, label: t.splitLabel, amount: t.totalAmount,
           method: t.paymentMethod, paidAt: t.paidAt,
+          splitGroup: t.splitGroup,
+          cashReceived: t.cashReceived,
+          changeAmount: t.changeAmount,
         })),
       },
     })
