@@ -108,7 +108,7 @@ export default function DashboardPage() {
             <div className="rounded-xl border bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 p-5">
               <div className="flex items-center gap-2 text-green-700 mb-1">
                 <Banknote className="h-4 w-4" />
-                <span className="text-xs font-medium">💰 Pendapatan</span>
+                <span className="text-xs font-medium">Pendapatan</span>
               </div>
               <p className="text-xl md:text-2xl font-bold text-green-800">{formatRupiah(today.totalRevenue)}</p>
               <p className="text-xs text-green-600 mt-1">{today.revenueCount} transaksi</p>
@@ -124,7 +124,7 @@ export default function DashboardPage() {
             <div className="rounded-xl border bg-gradient-to-br from-red-50 to-orange-50 border-red-200 p-5">
               <div className="flex items-center gap-2 text-red-700 mb-1">
                 <Wallet className="h-4 w-4" />
-                <span className="text-xs font-medium">📤 Pengeluaran</span>
+                <span className="text-xs font-medium">Pengeluaran</span>
               </div>
               <p className="text-xl md:text-2xl font-bold text-red-800">{formatRupiah(today.totalExpenses)}</p>
               <p className="text-xs text-red-600 mt-1">{today.expenseCount} entri</p>
@@ -142,7 +142,7 @@ export default function DashboardPage() {
             )}>
               <div className={cn("flex items-center gap-2 mb-1", today.profit >= 0 ? "text-blue-700" : "text-red-700")}>
                 <BarChart3 className="h-4 w-4" />
-                <span className="text-xs font-medium">📊 Profit</span>
+                <span className="text-xs font-medium">Profit</span>
               </div>
               <p className={cn("text-xl md:text-2xl font-bold", today.profit >= 0 ? "text-blue-800" : "text-red-800")}>
                 {formatRupiah(today.profit)}
