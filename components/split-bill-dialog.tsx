@@ -5,7 +5,9 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { formatRupiah, cn } from "@/lib/utils"
-import { Users, Check, ArrowLeft, Banknote, QrCode, Printer, Plus, Minus, ChevronRight, RefreshCw, AlertTriangle, Lock } from "lucide-react"
+import { Users, Check, ArrowLeft, Banknote, QrCode, Printer, Plus, Minus, ChevronRight, RefreshCw, AlertTriangle, Lock, Loader2 } from "lucide-react"
+import { printBytes } from "@/lib/printer"
+import { buildEscPosSplitPersonReceipt, buildEscPosSplitCombinedReceipt, type SplitPersonData } from "@/lib/escpos"
 
 type SplitItem = { menuItemId: string; name: string; price: number; quantity: number }
 type Props = { open: boolean; onClose: () => void; onComplete: () => void; orderId: string; orderNumber: string; items: SplitItem[] }
@@ -24,7 +26,7 @@ type SplitPlanData = {
 
 type ItemChange = { added: { name: string; menuItemId: string; count: number }[]; removed: { name: string; count: number }[] }
 
-type Step = "loading" | "method" | "setup-equal" | "setup-item" | "pay" | "done" | "print-select" | "print-preview"
+type Step = "loading" | "method" | "setup-equal" | "setup-item" | "pay" | "done" | "print-select"
 
 export default function SplitBillDialog({ open, onClose, onComplete, orderId, orderNumber, items }: Props) {
   const [step, setStep] = useState<Step>("loading")
@@ -36,13 +38,13 @@ export default function SplitBillDialog({ open, onClose, onComplete, orderId, or
   const [cashReceived, setCashReceived] = useState("")
   const [processing, setProcessing] = useState(false)
   const [splitGroup, setSplitGroup] = useState(() => `split_${Date.now()}`)
-  const [previewIdx, setPreviewIdx] = useState<number | null>(null)
-  const [previewMode, setPreviewMode] = useState<"combined" | "person">("person")
   const [somePaid, setSomePaid] = useState(false)
   const [assignments, setAssignments] = useState<Record<string, number>>({})
   const [personLabels, setPersonLabels] = useState<string[]>([])
   const [lockedKeys, setLockedKeys] = useState<Set<string>>(new Set())
   const [itemChange, setItemChange] = useState<ItemChange | null>(null)
+  const [printing, setPrinting] = useState(false)
+  const [printMsg, setPrintMsg] = useState("")
 
   const total = items.reduce((s, i) => s + i.price * i.quantity, 0)
 
@@ -183,8 +185,9 @@ export default function SplitBillDialog({ open, onClose, onComplete, orderId, or
 
   const reset = () => {
     setStep("loading"); setPersons([]); setPayingIdx(null); setCashReceived("")
-    setAssignments({}); setPersonLabels([]); setPayMethod("CASH"); setPreviewIdx(null)
-    setPreviewMode("person"); setSomePaid(false); setLockedKeys(new Set()); setItemChange(null)
+    setAssignments({}); setPersonLabels([]); setPayMethod("CASH")
+    setSomePaid(false); setLockedKeys(new Set()); setItemChange(null)
+    setPrinting(false); setPrintMsg("")
   }
   const handleClose = () => { if (somePaid) { reset(); onComplete() } else { reset(); onClose() } }
 
@@ -243,27 +246,85 @@ export default function SplitBillDialog({ open, onClose, onComplete, orderId, or
     const l = [...personLabels]; l[idx] = val; setPersonLabels(l)
   }
 
-  // Receipt helpers
-  const now = new Date()
-  const dateStr = now.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })
-  const timeStr = now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
-  const rCSS = () => `*{margin:0;padding:0;box-sizing:border-box}body{display:flex;justify-content:center}.receipt{font-family:"Courier New",monospace;font-size:12px;line-height:1.4;width:280px;padding:8px;color:#000;background:#fff}.center{text-align:center}.bold{font-weight:bold}.large{font-size:16px}.sep{text-align:center;color:#666;font-size:11px}.row{display:flex;justify-content:space-between;gap:4px}.mt{margin-top:8px}.mb{margin-bottom:4px}@media print{@page{size:80mm auto;margin:0}.receipt{width:80mm;padding:4mm;font-size:11px}}`
-  const fR = (n: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n)
-  function openPW(html: string, title: string) { const w = window.open("", "_blank", "width=320,height=600"); if (!w) { alert("Pop-up diblokir"); return }; w.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>${rCSS()}</style></head><body>${html}<script>window.onload=function(){window.print();window.onafterprint=function(){window.close()}};<\/script></body></html>`); w.document.close() }
-  function personRH(p: PersonDetail, idx: number) {
-    const ih = p.itemDetails.length > 0 ? p.itemDetails.map((it) => `<div class="row"><span>${it.name} x${it.qty}</span><span>${fR(it.price * it.qty)}</span></div>`).join("") : `<div class="center" style="font-size:11px;color:#666">Bagi rata dari total ${fR(total)}</div>`
-    const ci = p.method === "CASH" && p.cashReceived ? `<div class="row"><span>Dibayar:</span><span>${fR(p.cashReceived)}</span></div><div class="row bold"><span>Kembalian:</span><span>${fR(p.changeAmount || 0)}</span></div>` : ""
-    return `<div class="receipt"><div class="center bold large mb">RM. ETEK MINANG</div><div class="center mb" style="font-size:11px">Jl. Contoh Alamat No. 123</div><div class="sep">————————————————————————————————</div><div class="row mt"><span>No:</span><span class="bold">${orderNumber}</span></div><div class="row"><span>Tanggal:</span><span>${dateStr} ${timeStr}</span></div><div class="row"><span>Nama:</span><span class="bold">${p.label}</span></div><div class="row mb"><span>Tagihan:</span><span>${idx + 1} dari ${persons.filter(x => x.paid).length || persons.length}</span></div><div class="sep">————————————————————————————————</div><div class="mt mb">${ih}</div><div class="sep">————————————————————————————————</div><div class="row mt bold"><span>TOTAL BAYAR</span><span>${fR(p.amount)}</span></div><div class="row"><span>Metode:</span><span>${p.method === "CASH" ? "Tunai" : "QRIS"}</span></div>${ci}<div class="sep mt">————————————————————————————————</div><div class="center mt" style="font-size:10px">Terima kasih!</div></div>`
+  // ===== Direct Bluetooth printing =====
+  function toSplitPerson(p: PersonDetail): SplitPersonData {
+    return {
+      label: p.label, amount: p.amount,
+      method: (p.method || "CASH") as "CASH" | "QRIS",
+      cashReceived: p.cashReceived, changeAmount: p.changeAmount,
+      items: p.itemDetails.map((it) => ({ name: it.name, qty: it.qty, price: it.price })),
+    }
   }
-  function printCombined() { const ih = items.map((i) => `<div class="row"><span>${i.name} x${i.quantity}</span><span>${fR(i.price * i.quantity)}</span></div>`).join(""); const sh = persons.filter(p => p.paid).map(p => `<div class="row"><span>${p.label}</span><span>${fR(p.amount)} (${p.method === "CASH" ? "Tunai" : "QRIS"})</span></div>`).join(""); openPW(`<div class="receipt"><div class="center bold large mb">RM. ETEK MINANG</div><div class="center mb" style="font-size:11px">Jl. Contoh Alamat No. 123</div><div class="sep">————————————————————————————————</div><div class="row mt"><span>No:</span><span class="bold">${orderNumber}</span></div><div class="row mb"><span>Tipe:</span><span>SPLIT BILL</span></div><div class="sep">————————————————————————————————</div><div class="mt mb">${ih}</div><div class="sep">————————————————————————————————</div><div class="row mt bold"><span>TOTAL</span><span>${fR(total)}</span></div><div class="sep mt">————————————————————————————————</div><div class="center mt bold" style="font-size:11px">PEMBAGIAN TAGIHAN</div><div class="mt mb">${sh}</div><div class="sep">————————————————————————————————</div><div class="center mt" style="font-size:10px">Terima kasih!</div></div>`, `Struk Split - ${orderNumber}`) }
-  function printPerson(idx: number) { openPW(personRH(persons[idx], idx), `Struk ${persons[idx].label}`) }
-  function printAll() { openPW(persons.filter(p => p.paid).map((p, i) => `<div style="${i > 0 ? "page-break-before:always;margin-top:20px;" : ""}">${personRH(p, i)}</div>`).join(""), `Struk Semua`) }
+
+  async function doPrint(buildFn: () => Uint8Array, label: string) {
+    setPrinting(true); setPrintMsg(`Mencetak ${label}...`)
+    try {
+      await printBytes(buildFn())
+      setPrintMsg(`✓ ${label} tercetak`)
+      setTimeout(() => setPrintMsg(""), 2000)
+    } catch (err: any) {
+      setPrintMsg(`✗ Gagal: ${err?.message || "error"}`)
+      setTimeout(() => setPrintMsg(""), 4000)
+    }
+    setPrinting(false)
+  }
+
+  function printPerson(idx: number) {
+    const p = persons[idx]
+    const totalPaid = persons.filter((x) => x.paid).length || persons.length
+    doPrint(
+      () => buildEscPosSplitPersonReceipt(orderNumber, toSplitPerson(p), idx, totalPaid, total),
+      `struk ${p.label}`
+    )
+  }
+
+  function printCombined() {
+    const paidPersons = persons.filter((p) => p.paid).map(toSplitPerson)
+    doPrint(
+      () => buildEscPosSplitCombinedReceipt(orderNumber, items, paidPersons, total),
+      "struk gabungan"
+    )
+  }
+
+  async function printAllSequential() {
+    setPrinting(true)
+    const paid = persons.filter((p) => p.paid)
+    const totalPaid = paid.length
+    for (let i = 0; i < paid.length; i++) {
+      const p = paid[i]
+      setPrintMsg(`Mencetak ${i + 1}/${totalPaid}: ${p.label}...`)
+      try {
+        await printBytes(buildEscPosSplitPersonReceipt(orderNumber, toSplitPerson(p), i, totalPaid, total))
+        // Small delay between prints
+        if (i < paid.length - 1) await new Promise((r) => setTimeout(r, 800))
+      } catch (err: any) {
+        setPrintMsg(`✗ Gagal di ${p.label}: ${err?.message || "error"}`)
+        setPrinting(false)
+        setTimeout(() => setPrintMsg(""), 4000)
+        return
+      }
+    }
+    setPrintMsg(`✓ ${totalPaid} struk tercetak`)
+    setPrinting(false)
+    setTimeout(() => setPrintMsg(""), 2000)
+  }
 
   return (
     <Dialog open={open} onOpenChange={() => handleClose()}>
       <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col">
         <DialogHeader><DialogTitle className="flex items-center gap-2"><Users className="h-5 w-5 text-amber-700" />Bagi Tagihan — {orderNumber}</DialogTitle></DialogHeader>
         <div className="flex-1 overflow-y-auto py-2 space-y-4">
+
+          {/* Print status bar */}
+          {printMsg && (
+            <div className={cn("rounded-lg px-3 py-2 text-sm font-medium flex items-center gap-2",
+              printMsg.startsWith("✓") ? "bg-green-50 text-green-700 border border-green-200" :
+              printMsg.startsWith("✗") ? "bg-red-50 text-red-700 border border-red-200" :
+              "bg-blue-50 text-blue-700 border border-blue-200")}>
+              {printing && <Loader2 className="h-4 w-4 animate-spin" />}
+              {printMsg}
+            </div>
+          )}
 
           {step === "loading" && <div className="text-center py-12"><div className="text-3xl mb-3 animate-pulse">⏳</div><p className="text-sm text-muted-foreground">Memuat data...</p></div>}
 
@@ -394,7 +455,7 @@ export default function SplitBillDialog({ open, onClose, onComplete, orderId, or
                   <div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => setPayingIdx(null)}>Batal</Button>
                     <Button size="sm" onClick={() => handlePayPerson(idx)} disabled={processing || (payMethod === "CASH" && (parseInt(cashReceived) || 0) < person.amount)} className="bg-green-700 hover:bg-green-800 flex-1">{processing ? "Memproses..." : "Konfirmasi Bayar"}</Button></div>
                 </div>)}
-                {person.paid && <button onClick={() => { setPreviewIdx(idx); setPreviewMode("person"); setStep("print-preview") }} className="flex items-center gap-1 mt-2 text-xs text-amber-700 hover:text-amber-900"><Printer className="h-3 w-3" /> Cetak struk {person.label}</button>}
+                {person.paid && <button onClick={() => !printing && printPerson(idx)} className={cn("flex items-center gap-1 mt-2 text-xs text-amber-700 hover:text-amber-900", printing && "opacity-50")}><Printer className="h-3 w-3" /> Cetak struk {person.label}</button>}
               </div>
             ))}
 
@@ -411,52 +472,28 @@ export default function SplitBillDialog({ open, onClose, onComplete, orderId, or
               <div className="border-t pt-1 mt-1 flex justify-between font-bold"><span>Total</span><span className="font-mono">{formatRupiah(total)}</span></div>
             </div>
             <div className="space-y-2 mb-4"><p className="text-sm font-medium text-muted-foreground">Cetak Struk</p>
-              <div className="flex gap-2"><Button variant="outline" className="flex-1" onClick={() => { setPreviewMode("combined"); setPreviewIdx(0); setStep("print-preview") }}><Printer className="h-4 w-4 mr-2" /> Gabungan</Button>
-              <Button variant="outline" className="flex-1" onClick={() => { setPreviewMode("person"); setStep("print-select") }}><Printer className="h-4 w-4 mr-2" /> Per Orang</Button></div></div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={printCombined} disabled={printing}>
+                  <Printer className="h-4 w-4 mr-2" /> Gabungan
+                </Button>
+                <Button variant="outline" className="flex-1" onClick={() => setStep("print-select")} disabled={printing}>
+                  <Printer className="h-4 w-4 mr-2" /> Per Orang
+                </Button>
+              </div></div>
             <Button onClick={() => { reset(); onComplete() }} className="w-full bg-amber-800 hover:bg-amber-900">Selesai</Button>
           </div>)}
 
           {step === "print-select" && (<div className="space-y-3">
             <Button variant="ghost" size="sm" onClick={() => setStep("done")}><ArrowLeft className="h-4 w-4 mr-1" /> Kembali</Button>
+            <p className="text-sm font-medium">Pilih struk yang ingin dicetak:</p>
             {persons.filter(p => p.paid).map((p, i) => { const ri = persons.indexOf(p); return (
-              <button key={i} onClick={() => { setPreviewIdx(ri); setStep("print-preview") }} className="w-full flex items-center justify-between p-3 border-2 rounded-xl hover:border-amber-400">
+              <button key={i} onClick={() => !printing && printPerson(ri)} className={cn("w-full flex items-center justify-between p-3 border-2 rounded-xl hover:border-amber-400", printing && "opacity-50")}>
                 <div className="text-left"><p className="font-bold text-sm">{p.label}</p>{p.itemDetails.length > 0 && <p className="text-xs text-muted-foreground">{p.itemDetails.map(it => it.name).join(", ")}</p>}</div>
                 <div className="flex items-center gap-2"><p className="font-bold">{formatRupiah(p.amount)}</p><ChevronRight className="h-4 w-4 text-gray-400" /></div>
               </button>)})}
-            <Button variant="outline" className="w-full" onClick={printAll}><Printer className="h-4 w-4 mr-2" /> Cetak Semua</Button>
-          </div>)}
-
-          {step === "print-preview" && previewIdx !== null && (<div className="space-y-3">
-            <Button variant="ghost" size="sm" onClick={() => setStep(previewMode === "combined" ? "done" : allPaid ? "print-select" : "pay")}><ArrowLeft className="h-4 w-4 mr-1" /> Kembali</Button>
-            <div className="bg-gray-100 rounded-xl p-3 flex justify-center">
-              <div className="bg-white shadow-lg rounded-sm" style={{ fontFamily: '"Courier New", monospace', fontSize: 12, lineHeight: 1.4, width: 260, padding: 10 }}>
-                <p style={{ textAlign: "center", fontWeight: "bold", fontSize: 15 }}>RM. ETEK MINANG</p>
-                <p style={{ textAlign: "center", fontSize: 10, color: "#666", marginBottom: 6 }}>Jl. Contoh Alamat No. 123</p>
-                <p style={{ textAlign: "center", color: "#999", fontSize: 10 }}>————————————————————————</p>
-                {previewMode === "combined" ? (<>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span>No:</span><span style={{ fontWeight: "bold" }}>{orderNumber}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}><span>Tipe:</span><span>SPLIT BILL</span></div>
-                  <p style={{ textAlign: "center", color: "#999", fontSize: 10 }}>————————————————————————</p>
-                  {items.map((item, i) => (<div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11 }}><span>{item.name} x{item.quantity}</span><span>{formatRupiah(item.price * item.quantity)}</span></div>))}
-                  <p style={{ textAlign: "center", color: "#999", fontSize: 10, marginTop: 4 }}>————————————————————————</p>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", marginTop: 4 }}><span>TOTAL</span><span>{formatRupiah(total)}</span></div>
-                  <p style={{ textAlign: "center", fontWeight: "bold", fontSize: 11, marginTop: 6 }}>PEMBAGIAN</p>
-                  {persons.filter(p => p.paid).map((p, i) => (<div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 2 }}><span>{p.label}</span><span>{formatRupiah(p.amount)}</span></div>))}
-                </>) : (() => { const p = persons[previewIdx]; return (<>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span>No:</span><span style={{ fontWeight: "bold" }}>{orderNumber}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span>Nama:</span><span style={{ fontWeight: "bold" }}>{p.label}</span></div>
-                  <p style={{ textAlign: "center", color: "#999", fontSize: 10, marginTop: 4 }}>————————————————————————</p>
-                  {p.itemDetails.length > 0 ? p.itemDetails.map((it, i) => (<div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginTop: 2 }}><span>{it.name} x{it.qty}</span><span>{formatRupiah(it.price * it.qty)}</span></div>)) : <p style={{ textAlign: "center", fontSize: 10, color: "#666", marginTop: 4 }}>Bagi rata</p>}
-                  <p style={{ textAlign: "center", color: "#999", fontSize: 10, marginTop: 4 }}>————————————————————————</p>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", marginTop: 4, fontSize: 14 }}><span>TOTAL</span><span>{formatRupiah(p.amount)}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}><span>Metode:</span><span>{p.method === "CASH" ? "Tunai" : "QRIS"}</span></div>
-                  {p.method === "CASH" && p.cashReceived && (<><div style={{ display: "flex", justifyContent: "space-between" }}><span>Dibayar:</span><span>{formatRupiah(p.cashReceived)}</span></div><div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold" }}><span>Kembalian:</span><span>{formatRupiah(p.changeAmount || 0)}</span></div></>)}
-                </>)})()}
-                <p style={{ textAlign: "center", color: "#999", fontSize: 10, marginTop: 6 }}>————————————————————————</p>
-                <p style={{ textAlign: "center", fontSize: 10, marginTop: 6 }}>Terima kasih!</p>
-              </div>
-            </div>
-            <Button className="w-full bg-amber-800 hover:bg-amber-900" onClick={() => previewMode === "combined" ? printCombined() : printPerson(previewIdx)}><Printer className="h-4 w-4 mr-2" /> Cetak Struk</Button>
+            <Button variant="outline" className="w-full" onClick={printAllSequential} disabled={printing}>
+              <Printer className="h-4 w-4 mr-2" /> Cetak Semua Struk
+            </Button>
           </div>)}
 
         </div>

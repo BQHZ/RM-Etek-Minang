@@ -1,102 +1,116 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
-import { Printer, X, Bluetooth } from "lucide-react"
+import { Printer, X, Bluetooth, BluetoothOff } from "lucide-react"
 import ReceiptTemplate, { type ReceiptData } from "@/components/receipt-template"
 import { buildEscPosReceipt, PRINTER_SERVICE, PRINTER_CHARACTERISTIC } from "@/lib/escpos"
 
-type Props = { open: boolean; onClose: () => void; data: ReceiptData | null }
+type Props    = { open: boolean; onClose: () => void; data: ReceiptData | null }
 type BtStatus = "idle" | "connecting" | "connected" | "printing" | "error"
 
-// ─── Simpan device & characteristic di luar component ─────────────────────────
-// Supaya tidak hilang meski dialog dibuka/tutup berkali-kali
-let cachedDevice:  BluetoothDevice | null = null
-let cachedChar:    BluetoothRemoteGATTCharacteristic | null = null
+const STORAGE_KEY = "pos_printer_name"
+
+let cachedDevice: BluetoothDevice | null = null
+let cachedChar:   BluetoothRemoteGATTCharacteristic | null = null
 
 export default function ReceiptDialog({ open, onClose, data }: Props) {
-  const [btStatus,  setBtStatus]  = useState<BtStatus>("idle")
-  const [errorMsg,  setErrorMsg]  = useState("")
+  const [btStatus,    setBtStatus]    = useState<BtStatus>("idle")
+  const [errorMsg,    setErrorMsg]    = useState("")
   const [printerName, setPrinterName] = useState<string | null>(null)
 
-  // ─── Saat komponen pertama mount, cek apakah ada device yang sudah pernah di-pair ──
+  // ─── Mount: restore printer dari session sebelumnya ─────────────────────────
   useEffect(() => {
-    const restorePairedDevice = async () => {
-      try {
-        // getDevices() mengembalikan semua device yang sudah pernah di-pair di browser ini
-        const devices = await (navigator.bluetooth as any).getDevices()
-        if (devices.length === 0) return
+    const savedName = localStorage.getItem(STORAGE_KEY)
+    if (savedName) setPrinterName(savedName)
 
-        // Cari printer yang sudah pernah di-pair
-        const printer = devices.find((d: BluetoothDevice) =>
-          d.name?.toLowerCase().includes("printer") ||
-          d.name?.toLowerCase().includes("vsc") ||
-          d.name?.toLowerCase().includes("pos") ||
-          d.name?.toLowerCase().includes("tm-58") ||
-          true  // ← ambil device pertama jika tidak ada yang cocok
-        )
+    autoConnectSavedPrinter(savedName)
 
-        if (!printer) return
-
-        cachedDevice = printer
-        setPrinterName(printer.name || "Printer")
-
-        // Pasang listener disconnect
-        printer.addEventListener("gattserverdisconnected", handleDisconnect)
-
-        // Coba langsung connect di background
-        await connectToDevice(printer)
-
-      } catch {
-        // getDevices() tidak support di semua browser — tidak perlu error
-      }
-    }
-
-    restorePairedDevice()
-
-    // Cleanup listener saat unmount
     return () => {
       cachedDevice?.removeEventListener("gattserverdisconnected", handleDisconnect)
     }
   }, [])
 
-  // ─── Handler disconnect ────────────────────────────────────────────────────────
+  // ─── Auto connect ke printer yang pernah di-pair ─────────────────────────────
+  const autoConnectSavedPrinter = async (savedName: string | null) => {
+    try {
+      // getDevices() mengembalikan semua device yang sudah di-grant permission
+      // di browser ini — persists meski app ditutup & dibuka lagi
+      const devices: BluetoothDevice[] = await (navigator.bluetooth as any).getDevices()
+      if (devices.length === 0) return
+
+      // Prioritas: cocokkan dengan nama yang tersimpan
+      let printer = savedName
+        ? devices.find((d) => d.name === savedName)
+        : null
+
+      // Fallback: ambil device pertama kalau nama tidak cocok
+      if (!printer) printer = devices[0]
+      if (!printer) return
+
+      cachedDevice = printer
+      printer.addEventListener("gattserverdisconnected", handleDisconnect)
+      setPrinterName(printer.name || savedName || "Printer")
+      // Connect di background — tidak tampilkan loading ke user
+      await connectToDevice(printer, false)
+
+    } catch {
+      // getDevices() tidak support / gagal — tidak perlu error ke user
+    }
+  }
+
+  // ─── Handler disconnect ───────────────────────────────────────────────────────
   const handleDisconnect = () => {
     cachedChar = null
     setBtStatus("idle")
-    // Jangan reset cachedDevice — supaya bisa reconnect otomatis
+    // cachedDevice tetap ada → reconnect otomatis saat print berikutnya
   }
 
-  // ─── Connect ke device (tanpa popup) ──────────────────────────────────────────
-  const connectToDevice = async (device: BluetoothDevice): Promise<BluetoothRemoteGATTCharacteristic | null> => {
+  // ─── Connect ke device ────────────────────────────────────────────────────────
+  const connectToDevice = async (
+    device: BluetoothDevice,
+    showStatus = true
+  ): Promise<BluetoothRemoteGATTCharacteristic | null> => {
     try {
+      if (showStatus) setBtStatus("connecting")
+
       const server  = await device.gatt!.connect()
       const service = await server.getPrimaryService(PRINTER_SERVICE)
       const char    = await service.getCharacteristic(PRINTER_CHARACTERISTIC)
-      cachedChar    = char
-      setPrinterName(device.name || "Printer")
-      setBtStatus("connected")
+
+      cachedChar = char
+
+      const name = device.name || "Printer"
+      setPrinterName(name)
+
+      // ✅ Simpan nama printer ke localStorage
+      // Sehingga saat app dibuka ulang bisa langsung auto connect
+      localStorage.setItem(STORAGE_KEY, name)
+
+      if (showStatus) setBtStatus("connected")
       return char
+
     } catch {
       cachedChar = null
+      if (showStatus) setBtStatus("error")
       return null
     }
   }
 
-  // ─── Kirim data dalam chunk ────────────────────────────────────────────────────
+  // ─── Kirim data dalam chunk ───────────────────────────────────────────────────
   const sendInChunks = async (
     char: BluetoothRemoteGATTCharacteristic,
-    data: Uint8Array,
+    bytes: Uint8Array,
     chunkSize = 512
   ) => {
-    for (let i = 0; i < data.length; i += chunkSize) {
-      await char.writeValue(data.slice(i, i + chunkSize))
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      await char.writeValue(bytes.slice(i, i + chunkSize))
       await new Promise((r) => setTimeout(r, 50))
     }
   }
 
-  // ─── Main print handler ────────────────────────────────────────────────────────
+  // ─── Main print handler ───────────────────────────────────────────────────────
   const handlePrint = async () => {
     if (!data) return
     setErrorMsg("")
@@ -104,7 +118,7 @@ export default function ReceiptDialog({ open, onClose, data }: Props) {
     try {
       let char = cachedChar
 
-      // Kasus 1: Sudah ada char yang valid → langsung print
+      // Kasus 1: Char valid → langsung print
       if (char) {
         setBtStatus("printing")
         await sendInChunks(char, buildEscPosReceipt(data))
@@ -113,10 +127,18 @@ export default function ReceiptDialog({ open, onClose, data }: Props) {
         return
       }
 
-      // Kasus 2: Device dikenal tapi koneksi putus → reconnect otomatis
+      // Kasus 2: Device dikenal, koneksi putus → reconnect otomatis (TANPA popup)
       if (cachedDevice) {
         setBtStatus("connecting")
-        char = await connectToDevice(cachedDevice)
+
+        // Retry hingga 3x — kadang perlu beberapa detik setelah app baru dibuka
+        let char: BluetoothRemoteGATTCharacteristic | null = null
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          char = await connectToDevice(cachedDevice)
+          if (char) break
+          // Tunggu sebentar sebelum retry
+          await new Promise((r) => setTimeout(r, 1000 * attempt))
+        }
 
         if (char) {
           setBtStatus("printing")
@@ -126,16 +148,16 @@ export default function ReceiptDialog({ open, onClose, data }: Props) {
           return
         }
 
-        // Reconnect gagal (printer mati / tidak terjangkau)
-        throw new Error("Printer tidak ditemukan. Pastikan printer menyala dan Bluetooth aktif.")
+        throw new Error(
+          "Printer tidak dapat dijangkau setelah 3x percobaan. Pastikan printer menyala."
+        )
       }
-
-      // Kasus 3: Belum pernah pair → tampilkan popup pilih device (hanya sekali ini)
+      // Kasus 3: Belum pernah pair → popup pilih device (hanya sekali)
       setBtStatus("connecting")
 
       const device = await navigator.bluetooth.requestDevice({
         filters: [{ services: [PRINTER_SERVICE] }],
-        // Jika filter tidak cocok, uncomment baris di bawah:
+        // Jika filter tidak cocok, uncomment:
         // acceptAllDevices: true,
         // optionalServices: [PRINTER_SERVICE],
       })
@@ -152,7 +174,6 @@ export default function ReceiptDialog({ open, onClose, data }: Props) {
       onClose()
 
     } catch (err: any) {
-      // User cancel popup = bukan error
       if (err?.name === "NotFoundError" || err?.message?.includes("cancelled")) {
         setBtStatus(cachedDevice ? "connected" : "idle")
         return
@@ -162,6 +183,16 @@ export default function ReceiptDialog({ open, onClose, data }: Props) {
       cachedChar = null
       setBtStatus("error")
     }
+  }
+
+  // ─── Reset / ganti printer ────────────────────────────────────────────────────
+  const handleForgetPrinter = () => {
+    cachedDevice?.gatt?.disconnect()
+    cachedDevice = null
+    cachedChar   = null
+    localStorage.removeItem(STORAGE_KEY)
+    setPrinterName(null)
+    setBtStatus("idle")
   }
 
   if (!data) return null
@@ -182,12 +213,29 @@ export default function ReceiptDialog({ open, onClose, data }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="font-bold text-lg">Preview Struk</h2>
-          {printerName && (
-            <span className="flex items-center gap-1 text-xs text-blue-600 font-medium">
-              <Bluetooth className="h-3 w-3" />
-              {printerName}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {printerName ? (
+              <>
+                <span className="flex items-center gap-1 text-xs text-blue-600 font-medium">
+                  <Bluetooth className="h-3 w-3" />
+                  {printerName}
+                </span>
+                {/* Tombol ganti printer */}
+                <button
+                  onClick={handleForgetPrinter}
+                  className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+                  title="Ganti printer"
+                >
+                  <BluetoothOff className="h-3.5 w-3.5" />
+                </button>
+              </>
+            ) : (
+              <span className="flex items-center gap-1 text-xs text-gray-400">
+                <BluetoothOff className="h-3 w-3" />
+                Belum terhubung
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Preview */}
@@ -206,7 +254,12 @@ export default function ReceiptDialog({ open, onClose, data }: Props) {
 
         {/* Actions */}
         <div className="flex gap-2 p-4 border-t">
-          <Button variant="outline" onClick={onClose} className="flex-1" disabled={isLoading}>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            className="flex-1"
+            disabled={isLoading}
+          >
             <X className="h-4 w-4 mr-2" /> Tutup
           </Button>
           <Button

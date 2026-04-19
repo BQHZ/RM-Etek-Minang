@@ -15,6 +15,7 @@ import {
   TrendingUp,
   ShieldCheck,
 } from "lucide-react"
+import PrinterStatus from "@/components/printer-status"
 
 const DASHBOARD_NAV: SidebarItem[] = [
   { label: "Ringkasan", href: "/dashboard", icon: LayoutDashboard },
@@ -34,6 +35,11 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="h-screen flex flex-col">
       <AppHeader userName={session.name} role={session.role} />
+
+      <div className="bg-white border-b px-4 py-1.5 flex items-center justify-end shrink-0">
+        <PrinterStatus />
+      </div>
+
       <div className="flex flex-1 overflow-hidden">
         <AppSidebar items={DASHBOARD_NAV} />
         <main className="flex-1 overflow-auto bg-gray-50 p-4">

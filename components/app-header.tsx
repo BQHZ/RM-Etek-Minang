@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation"
 import { LogOut, User } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import PrinterStatus from "@/components/printer-status"  // ✅
 
 const ROLE_LABELS: Record<string, string> = {
   OWNER: "Pemilik",
@@ -14,10 +15,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 function getTodayString() {
   return new Date().toLocaleDateString("id-ID", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
   })
 }
 
@@ -37,6 +35,7 @@ export default function AppHeader({
 
   return (
     <header className="h-14 border-b bg-white flex items-center justify-between px-4 shrink-0">
+      {/* Kiri — nama restoran + tanggal */}
       <div className="flex items-center gap-3">
         <span className="text-lg font-bold text-amber-900 hidden sm:inline">
           RM. Etek Minang
@@ -47,7 +46,22 @@ export default function AppHeader({
         </span>
       </div>
 
+      {/* Kanan — printer status + user info + logout */}
       <div className="flex items-center gap-3">
+
+        {/* ✅ Printer status — hanya tampil untuk KASIR dan OWNER */}
+        {(role === "KASIR" || role === "OWNER") && (
+          <div className="hidden sm:block">
+            <PrinterStatus />
+          </div>
+        )}
+
+        {/* Divider */}
+        {(role === "KASIR" || role === "OWNER") && (
+          <div className="hidden sm:block h-5 w-px bg-gray-200" />
+        )}
+
+        {/* User info */}
         <div className="flex items-center gap-2">
           <User className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">{userName}</span>
@@ -55,7 +69,14 @@ export default function AppHeader({
             {ROLE_LABELS[role] || role}
           </Badge>
         </div>
-        <Button variant="ghost" size="sm" onClick={handleLogout} className="text-muted-foreground hover:text-red-600">
+
+        {/* Logout */}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleLogout}
+          className="text-muted-foreground hover:text-red-600"
+        >
           <LogOut className="h-4 w-4 mr-1" />
           <span className="hidden sm:inline">Keluar</span>
         </Button>
