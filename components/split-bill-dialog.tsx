@@ -466,7 +466,7 @@ export default function SplitBillDialog({ open, onClose, onComplete, orderId, or
           </div>)}
 
           {step === "done" && (<div className="text-center py-4">
-            <div className="text-5xl mb-4">✅</div><h2 className="text-lg font-bold text-green-800 mb-2">Semua Tagihan Lunas!</h2>
+            <div className="text-5xl mb-4"></div><h2 className="text-lg font-bold text-green-800 mb-2">Semua Tagihan Lunas!</h2>
             <div className="bg-gray-50 rounded-xl p-3 space-y-1 text-sm mb-4">
               {persons.filter(p => p.paid).map((p, i) => (<div key={i} className="flex justify-between"><span>{p.label}</span><span className="font-mono">{formatRupiah(p.amount)} ({p.method === "CASH" ? "Tunai" : "QRIS"})</span></div>))}
               <div className="border-t pt-1 mt-1 flex justify-between font-bold"><span>Total</span><span className="font-mono">{formatRupiah(total)}</span></div>
